@@ -3,29 +3,30 @@
 // See the LICENSE file in the project root for more information.
 
 using System.Drawing;
-using Microsoft.ML.Runtime.Data;
+using Microsoft.Data.DataView;
+using Microsoft.ML.Internal.Utilities;
 
-namespace Microsoft.ML.Runtime.ImageAnalytics
+namespace Microsoft.ML.ImageAnalytics
 {
-    public sealed class ImageType : StructuredType
+    public sealed class ImageType : StructuredDataViewType
     {
         public readonly int Height;
         public readonly int Width;
         public ImageType(int height, int width)
            : base(typeof(Bitmap))
         {
-            Contracts.CheckParam(height > 0, nameof(height));
-            Contracts.CheckParam(width > 0, nameof(width));
-            Contracts.CheckParam((long)height * width <= int.MaxValue / 4, nameof(height), nameof(height) + " * " + nameof(width) + " is too large");
+            Contracts.CheckParam(height > 0, nameof(height), "Must be positive.");
+            Contracts.CheckParam(width > 0, nameof(width), " Must be positive.");
+            Contracts.CheckParam((long)height * width <= int.MaxValue / 4, nameof(height), nameof(height) + " * " + nameof(width) + " is too large.");
             Height = height;
             Width = width;
         }
 
-        public ImageType() : base(typeof(Image))
+        public ImageType() : base(typeof(Bitmap))
         {
         }
 
-        public override bool Equals(ColumnType other)
+        public override bool Equals(DataViewType other)
         {
             if (other == this)
                 return true;
@@ -33,7 +34,17 @@ namespace Microsoft.ML.Runtime.ImageAnalytics
                 return false;
             if (Height != tmp.Height)
                 return false;
-            return Width != tmp.Width;
+            return Width == tmp.Width;
+        }
+
+        public override bool Equals(object other)
+        {
+            return other is DataViewType tmp && Equals(tmp);
+        }
+
+        public override int GetHashCode()
+        {
+            return Hashing.CombineHash(Height.GetHashCode(), Width.GetHashCode());
         }
 
         public override string ToString()

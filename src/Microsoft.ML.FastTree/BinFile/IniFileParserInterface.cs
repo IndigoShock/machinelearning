@@ -4,10 +4,10 @@
 
 using System;
 using System.Linq;
-using System.Text;
 using System.Runtime.InteropServices;
+using System.Text;
 
-namespace Microsoft.ML.Runtime.FastTree.Internal
+namespace Microsoft.ML.Trainers.FastTree
 {
     internal sealed class IniFileParserInterface
     {
@@ -253,8 +253,6 @@ namespace Microsoft.ML.Runtime.FastTree.Internal
             private readonly IntPtr _inputPtr;
 
             public int Id { get; }
-
-            public MD5Hash ContentMD5Hash => MD5Hasher.Hash(Content);
 
             // Return the name of the input
             public unsafe string Name => _parserInterface.GetInputName(Id);

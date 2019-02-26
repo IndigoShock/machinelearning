@@ -4,7 +4,7 @@
 
 using System;
 
-namespace Microsoft.ML.Runtime
+namespace Microsoft.ML
 {
     /// <summary>
     /// A channel provider can create new channels and generic information pipes.
@@ -20,6 +20,33 @@ namespace Microsoft.ML.Runtime
         /// Start a generic information pipe.
         /// </summary>
         IPipe<TMessage> StartPipe<TMessage>(string name);
+    }
+
+    /// <summary>
+    /// Utility class for IHostEnvironment
+    /// </summary>
+    [BestFriend]
+    internal static class HostEnvironmentExtensions
+    {
+        /// <summary>
+        /// Return a file handle for an input "file".
+        /// </summary>
+        public static IFileHandle OpenInputFile(this IHostEnvironment env, string path)
+        {
+            Contracts.AssertValue(env);
+            Contracts.CheckNonWhiteSpace(path, nameof(path));
+            return new SimpleFileHandle(env, path, needsWrite: false, autoDelete: false);
+        }
+
+        /// <summary>
+        /// Create an output "file" and return a handle to it.
+        /// </summary>
+        public static IFileHandle CreateOutputFile(this IHostEnvironment env, string path)
+        {
+            Contracts.AssertValue(env);
+            Contracts.CheckNonWhiteSpace(path, nameof(path));
+            return new SimpleFileHandle(env, path, needsWrite: true, autoDelete: false);
+        }
     }
 
     /// <summary>
@@ -47,14 +74,9 @@ namespace Microsoft.ML.Runtime
         bool IsCancelled { get; }
 
         /// <summary>
-        /// Return a file handle for an input "file".
+        /// The catalog of loadable components (<see cref="LoadableClassAttribute"/>) that are available in this host.
         /// </summary>
-        IFileHandle OpenInputFile(string path);
-
-        /// <summary>
-        /// Create an output "file" and return a handle to it.
-        /// </summary>
-        IFileHandle CreateOutputFile(string path);
+        ComponentCatalog ComponentCatalog { get; }
 
         /// <summary>
         /// Create a temporary "file" and return a handle to it. Generally temp files are expected to be
@@ -64,8 +86,10 @@ namespace Microsoft.ML.Runtime
         /// handles and ensure that they are disposed properly when the environment is "shut down".
         ///
         /// The suffix and prefix are optional. A common use for suffix is to specify an extension, eg, ".txt".
-        /// The use of suffix and prefix, including whether they have any affect, is up to the host enviroment.
+        /// The use of suffix and prefix, including whether they have any affect, is up to the host environment.
         /// </summary>
+        [Obsolete("The host environment is not disposable, so it is inappropriate to use this method. " +
+            "Please handle your own temporary files within the component yourself, including their proper disposal and deletion.")]
         IFileHandle CreateTempFile(string suffix = null, string prefix = null);
     }
 
@@ -80,7 +104,7 @@ namespace Microsoft.ML.Runtime
         /// The random number generator issued to this component. Note that random number
         /// generators are NOT thread safe.
         /// </summary>
-        IRandom Rand { get; }
+        Random Rand { get; }
 
         /// <summary>
         /// Signal to stop exection in this host and all its children.
@@ -99,11 +123,6 @@ namespace Microsoft.ML.Runtime
         /// The caller relinquishes ownership of the <paramref name="msg"/> object.
         /// </summary>
         void Send(TMessage msg);
-
-        /// <summary>
-        /// Called to indicate a normal shut-down of the pipe before disposing.
-        /// </summary>
-        void Done();
     }
 
     /// <summary>
@@ -144,7 +163,7 @@ namespace Microsoft.ML.Runtime
 
         /// <summary>
         /// For messages that contain information like column names from datasets.
-        /// Note that, despite being part of the schema, metadata should be treated
+        /// Note that, despite being part of the schema, annotations should be treated
         /// as user data, since it is often derived from user data. Note also that
         /// types, despite being part of the schema, are not considered "sensitive"
         /// as such, in the same way that column names might be.
@@ -169,7 +188,7 @@ namespace Microsoft.ML.Runtime
     /// <summary>
     /// A channel message.
     /// </summary>
-    public struct ChannelMessage
+    public readonly struct ChannelMessage
     {
         public readonly ChannelMessageKind Kind;
         public readonly MessageSensitivity Sensitivity;
@@ -181,7 +200,8 @@ namespace Microsoft.ML.Runtime
         /// </summary>
         public string Message => _args != null ? string.Format(_message, _args) : _message;
 
-        public ChannelMessage(ChannelMessageKind kind, MessageSensitivity sensitivity, string message)
+        [BestFriend]
+        internal ChannelMessage(ChannelMessageKind kind, MessageSensitivity sensitivity, string message)
         {
             Contracts.CheckNonEmpty(message, nameof(message));
             Kind = kind;
@@ -190,7 +210,8 @@ namespace Microsoft.ML.Runtime
             _args = null;
         }
 
-        public ChannelMessage(ChannelMessageKind kind, MessageSensitivity sensitivity, string fmt, params object[] args)
+        [BestFriend]
+        internal ChannelMessage(ChannelMessageKind kind, MessageSensitivity sensitivity, string fmt, params object[] args)
         {
             Contracts.CheckNonEmpty(fmt, nameof(fmt));
             Contracts.CheckNonEmpty(args, nameof(args));
@@ -219,10 +240,11 @@ namespace Microsoft.ML.Runtime
     /// <summary>
     /// General utility extension methods for objects in the "host" universe, i.e.,
     /// <see cref="IHostEnvironment"/>, <see cref="IHost"/>, and <see cref="IChannel"/>
-    /// that do not belong in more specific areas, e.g., <see cref="Contracts"/> or
+    /// that do not belong in more specific areas, for example, <see cref="Contracts"/> or
     /// component creation.
     /// </summary>
-    public static class HostExtensions
+    [BestFriend]
+    internal static class HostExtensions
     {
         public static T Apply<T>(this IHost host, string channelName, Func<IChannel, T> func)
         {
@@ -230,7 +252,6 @@ namespace Microsoft.ML.Runtime
             using (var ch = host.Start(channelName))
             {
                 t = func(ch);
-                ch.Done();
             }
             return t;
         }
@@ -247,7 +268,7 @@ namespace Microsoft.ML.Runtime
         /// setting <see cref="MessageSensitivity.Unknown"/>.
         /// </summary>
         public static void Trace(this IChannel ch, string fmt, params object[] args)
-            => ch.Trace(MessageSensitivity.Unknown, fmt);
+            => ch.Trace(MessageSensitivity.Unknown, fmt, args);
 
         /// <summary>
         /// Convenience variant of <see cref="IChannel.Error(MessageSensitivity, string)"/>

@@ -6,25 +6,25 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using Microsoft.ML.Runtime;
-using Microsoft.ML.Runtime.CommandLine;
-using Microsoft.ML.Runtime.Internal.Utilities;
+using Microsoft.ML.CommandLine;
+using Microsoft.ML.Internal.Utilities;
 
-namespace Microsoft.ML.Runtime.Internal.Internallearn
+namespace Microsoft.ML.Internal.Internallearn
 {
     using Float = System.Single;
 
     /// <summary>
     /// Various utilities
     /// </summary>
-    public static class PredictionUtil
+    [BestFriend]
+    internal static class PredictionUtil
     {
         /// <summary>
         /// generic method for parsing arguments using CommandLine. If there's a problem, it throws an InvalidOperationException, with a message giving usage.
         /// </summary>
         /// <param name="env">The host environment</param>
         /// <param name="args">The argument object</param>
-        /// <param name="settings">The settings string (e.g. "threshold-")</param>
+        /// <param name="settings">The settings string (for example, "threshold-")</param>
         /// <param name="name">The name is used for error reporting only</param>
         public static void ParseArguments(IHostEnvironment env, object args, string settings, string name = null)
         {
@@ -151,18 +151,6 @@ namespace Microsoft.ML.Runtime.Internal.Internallearn
                     return s[0];
                 return default(char);
             }
-        }
-    }
-
-    /// <summary>
-    /// A generic reverse Comparer (for use in Array.Sort)
-    /// </summary>
-    public sealed class ReverseComparer<T> : IComparer<T>
-        where T : IComparable<T>
-    {
-        public int Compare(T x, T y)
-        {
-            return -x.CompareTo(y);
         }
     }
 }

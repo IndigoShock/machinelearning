@@ -4,8 +4,8 @@
 // the corresponding code in ML.NET.
 
 using System;
-using Microsoft.ML.Runtime;
-using Microsoft.ML.Runtime.Model;
+using Microsoft.ML;
+using Microsoft.ML.Model;
 
 namespace TestNamespace
 {
@@ -56,4 +56,26 @@ namespace TestNamespace
     {
         public const string CoolMessage = "This is super cool";
     }
+}
+
+// Dummy declarations so that the independent compilation of contracts works as expected.
+namespace Microsoft.ML
+{
+    [Flags]
+    internal enum MessageSensitivity
+    {
+        None = 0,
+        Unknown = ~None,
+        UserData,
+        Schema
+    }
+    internal interface IHostEnvironment : IExceptionContext
+    {
+        bool IsCancelled { get; }
+    }
+}
+
+namespace Microsoft.ML.Model
+{
+    public sealed class ModelLoadContext { }
 }

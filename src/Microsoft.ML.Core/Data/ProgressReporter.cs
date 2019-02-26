@@ -7,17 +7,18 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using Microsoft.ML.Runtime.Internal.Utilities;
+using Microsoft.ML.Internal.Utilities;
 
-namespace Microsoft.ML.Runtime.Data
+namespace Microsoft.ML.Data
 {
     /// <summary>
     /// The progress reporting classes used by <see cref="HostEnvironmentBase{THostEnvironmentBase}"/> descendants.
     /// </summary>
-    public static class ProgressReporting
+    [BestFriend]
+    internal static class ProgressReporting
     {
         /// <summary>
-        /// The progress channel for <see cref="TlcEnvironment"/>.
+        /// The progress channel for <see cref="ConsoleEnvironment"/>.
         /// This is coupled with a <see cref="ProgressTracker"/> that aggregates all events and returns them on demand.
         /// </summary>
         public sealed class ProgressChannel : IProgressChannel
@@ -145,9 +146,7 @@ namespace Microsoft.ML.Runtime.Data
 
             private IProgressChannel StartProgressChannel(int level)
             {
-#pragma warning disable 420 // Interlocked with volatile.
                 var newId = Interlocked.Increment(ref _maxSubId);
-#pragma warning restore 420
                 return new SubChannel(this, level, newId);
             }
 
@@ -467,6 +466,17 @@ namespace Microsoft.ML.Runtime.Data
                 }
 
                 return list;
+            }
+
+            public void Reset()
+            {
+                lock (_lock)
+                {
+                    while (!_pendingEvents.IsEmpty)
+                        _pendingEvents.TryDequeue(out var res);
+                    _namesUsed.Clear();
+                    _index = 0;
+                }
             }
         }
 

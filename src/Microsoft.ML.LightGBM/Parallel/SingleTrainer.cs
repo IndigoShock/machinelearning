@@ -3,51 +3,51 @@
 // See the LICENSE file in the project root for more information.
 
 using System.Collections.Generic;
-using Microsoft.ML.Runtime;
-using Microsoft.ML.Runtime.EntryPoints;
+using Microsoft.ML;
+using Microsoft.ML.EntryPoints;
 
-[assembly: LoadableClass(typeof(Microsoft.ML.Runtime.LightGBM.SingleTrainer),
-    null, typeof(Microsoft.ML.Runtime.LightGBM.SignatureParallelTrainer), "single")]
+[assembly: LoadableClass(typeof(Microsoft.ML.LightGBM.SingleTrainer),
+    null, typeof(Microsoft.ML.LightGBM.SignatureParallelTrainer), "single")]
 
-[assembly: EntryPointModule(typeof(Microsoft.ML.Runtime.LightGBM.SingleTrainerFactory))]
+[assembly: EntryPointModule(typeof(Microsoft.ML.LightGBM.SingleTrainerFactory))]
 
-namespace Microsoft.ML.Runtime.LightGBM
+namespace Microsoft.ML.LightGBM
 {
-    public sealed class SingleTrainer : IParallel
+    internal sealed class SingleTrainer : IParallel
     {
-        public AllgatherFunction GetAllgatherFunction()
+        AllgatherFunction IParallel.GetAllgatherFunction()
         {
             return null;
         }
 
-        public ReduceScatterFunction GetReduceScatterFunction()
+        ReduceScatterFunction IParallel.GetReduceScatterFunction()
         {
             return null;
         }
 
-        public int NumMachines()
+        int IParallel.NumMachines()
         {
             return 1;
         }
 
-        public string ParallelType()
+        string IParallel.ParallelType()
         {
             return "serial";
         }
 
-        public int Rank()
+        int IParallel.Rank()
         {
             return 0;
         }
 
-        public Dictionary<string, string> AdditionalParams()
+        Dictionary<string, string> IParallel.AdditionalParams()
         {
             return null;
         }
     }
 
     [TlcModule.Component(Name = "Single", Desc = "Single node machine learning process.")]
-    public sealed class SingleTrainerFactory : ISupportParallel
+    internal sealed class SingleTrainerFactory : ISupportParallel
     {
         public IParallel CreateComponent(IHostEnvironment env) => new SingleTrainer();
     }

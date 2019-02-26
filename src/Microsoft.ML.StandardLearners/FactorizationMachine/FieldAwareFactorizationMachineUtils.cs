@@ -5,11 +5,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Microsoft.ML.Runtime.Data;
-using Microsoft.ML.Runtime.Internal.CpuMath;
-using Microsoft.ML.Runtime.Internal.Utilities;
+using Microsoft.Data.DataView;
+using Microsoft.ML.Data;
+using Microsoft.ML.Internal.CpuMath;
+using Microsoft.ML.Internal.Utilities;
 
-namespace Microsoft.ML.Runtime.FactorizationMachine
+namespace Microsoft.ML.FactorizationMachine
 {
     internal sealed class FieldAwareFactorizationMachineUtils
     {
@@ -55,26 +56,28 @@ namespace Microsoft.ML.Runtime.FactorizationMachine
 
     internal sealed class FieldAwareFactorizationMachineScalarRowMapper : ISchemaBoundRowMapper
     {
-        private readonly FieldAwareFactorizationMachinePredictor _pred;
+        private readonly FieldAwareFactorizationMachineModelParameters _pred;
 
-        public RoleMappedSchema InputSchema { get; }
+        public RoleMappedSchema InputRoleMappedSchema { get; }
 
-        public ISchema OutputSchema { get; }
+        public DataViewSchema OutputSchema { get; }
+
+        public DataViewSchema InputSchema => InputRoleMappedSchema.Schema;
 
         public ISchemaBindableMapper Bindable => _pred;
 
-        private readonly ColumnInfo[] _columns;
+        private readonly DataViewSchema.Column[] _columns;
         private readonly List<int> _inputColumnIndexes;
         private readonly IHostEnvironment _env;
 
         public FieldAwareFactorizationMachineScalarRowMapper(IHostEnvironment env, RoleMappedSchema schema,
-            ISchema outputSchema, FieldAwareFactorizationMachinePredictor pred)
+            DataViewSchema outputSchema, FieldAwareFactorizationMachineModelParameters pred)
         {
             Contracts.AssertValue(env);
             Contracts.AssertValue(schema);
-            Contracts.CheckParam(outputSchema.ColumnCount == 2, nameof(outputSchema));
-            Contracts.CheckParam(outputSchema.GetColumnType(0).IsNumber, nameof(outputSchema));
-            Contracts.CheckParam(outputSchema.GetColumnType(1).IsNumber, nameof(outputSchema));
+            Contracts.CheckParam(outputSchema.Count == 2, nameof(outputSchema));
+            Contracts.CheckParam(outputSchema[0].Type is NumberDataViewType, nameof(outputSchema));
+            Contracts.CheckParam(outputSchema[1].Type is NumberDataViewType, nameof(outputSchema));
             Contracts.AssertValue(pred);
 
             _env = env;
@@ -82,7 +85,7 @@ namespace Microsoft.ML.Runtime.FactorizationMachine
             _pred = pred;
 
             var inputFeatureColumns = _columns.Select(c => new KeyValuePair<RoleMappedSchema.ColumnRole, string>(RoleMappedSchema.ColumnRole.Feature, c.Name)).ToList();
-            InputSchema = new RoleMappedSchema(schema.Schema, inputFeatureColumns);
+            InputRoleMappedSchema = new RoleMappedSchema(schema.Schema, inputFeatureColumns);
             OutputSchema = outputSchema;
 
             _inputColumnIndexes = new List<int>();
@@ -93,7 +96,7 @@ namespace Microsoft.ML.Runtime.FactorizationMachine
             }
         }
 
-        public IRow GetOutputRow(IRow input, Func<int, bool> predicate, out Action action)
+        public DataViewRow GetRow(DataViewRow input, Func<int, bool> predicate)
         {
             var latentSum = new AlignedArray(_pred.FieldCount * _pred.FieldCount * _pred.LatentDimAligned, 16);
             var featureBuffer = new VBuffer<float>();
@@ -101,10 +104,13 @@ namespace Microsoft.ML.Runtime.FactorizationMachine
             var featureIndexBuffer = new int[_pred.FeatureCount];
             var featureValueBuffer = new float[_pred.FeatureCount];
             var inputGetters = new ValueGetter<VBuffer<float>>[_pred.FieldCount];
-            for (int f = 0; f < _pred.FieldCount; f++)
-                inputGetters[f] = input.GetGetter<VBuffer<float>>(_inputColumnIndexes[f]);
 
-            action = null;
+            if (predicate(0) || predicate(1))
+            {
+                for (int f = 0; f < _pred.FieldCount; f++)
+                    inputGetters[f] = input.GetGetter<VBuffer<float>>(_inputColumnIndexes[f]);
+            }
+
             var getters = new Delegate[2];
             if (predicate(0))
             {
@@ -127,17 +133,20 @@ namespace Microsoft.ML.Runtime.FactorizationMachine
             return new SimpleRow(OutputSchema, input, getters);
         }
 
-        public Func<int, bool> GetDependencies(Func<int, bool> predicate)
+        /// <summary>
+        /// Given a set of columns, return the input columns that are needed to generate those output columns.
+        /// </summary>
+        IEnumerable<DataViewSchema.Column> ISchemaBoundRowMapper.GetDependenciesForNewColumns(IEnumerable<DataViewSchema.Column> columns)
         {
-            if (Enumerable.Range(0, OutputSchema.ColumnCount).Any(predicate))
-                return index => _inputColumnIndexes.Any(c => c == index);
-            else
-                return index => false;
+            if (columns.Count() == 0)
+                return Enumerable.Empty<DataViewSchema.Column>();
+
+            return InputSchema.Where(col => _inputColumnIndexes.Contains(col.Index));
         }
 
         public IEnumerable<KeyValuePair<RoleMappedSchema.ColumnRole, string>> GetInputColumnRoles()
         {
-            return InputSchema.GetColumnRoles().Select(kvp => new KeyValuePair<RoleMappedSchema.ColumnRole, string>(kvp.Key, kvp.Value.Name));
+            return InputRoleMappedSchema.GetColumnRoles().Select(kvp => new KeyValuePair<RoleMappedSchema.ColumnRole, string>(kvp.Key, kvp.Value.Name));
         }
     }
 }

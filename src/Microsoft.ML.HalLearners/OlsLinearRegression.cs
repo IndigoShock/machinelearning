@@ -1,77 +1,99 @@
-// Licensed to the .NET Foundation under one or more agreements.
+﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
-
-using Float = System.Single;
 
 using System;
 using System.Collections.Generic;
 using System.IO;
-using Microsoft.ML.Runtime;
-using Microsoft.ML.Runtime.HalLearners;
-using Microsoft.ML.Runtime.Internal.Internallearn;
-using Microsoft.ML.Runtime.Internal.Utilities;
-using Microsoft.ML.Runtime.CommandLine;
-using Microsoft.ML.Runtime.Data;
-using Microsoft.ML.Runtime.EntryPoints;
-using Microsoft.ML.Runtime.Learners;
-using Microsoft.ML.Runtime.Model;
-using Microsoft.ML.Runtime.Training;
 using System.Runtime.InteropServices;
+using System.Security;
+using Microsoft.Data.DataView;
+using Microsoft.ML;
+using Microsoft.ML.CommandLine;
+using Microsoft.ML.Data;
+using Microsoft.ML.EntryPoints;
+using Microsoft.ML.Internal.Internallearn;
+using Microsoft.ML.Internal.Utilities;
+using Microsoft.ML.Model;
+using Microsoft.ML.Trainers.HalLearners;
 
-[assembly: LoadableClass(OlsLinearRegressionTrainer.Summary, typeof(OlsLinearRegressionTrainer), typeof(OlsLinearRegressionTrainer.Arguments),
+[assembly: LoadableClass(OlsLinearRegressionTrainer.Summary, typeof(OlsLinearRegressionTrainer), typeof(OlsLinearRegressionTrainer.Options),
     new[] { typeof(SignatureRegressorTrainer), typeof(SignatureTrainer), typeof(SignatureFeatureScorerTrainer) },
     OlsLinearRegressionTrainer.UserNameValue,
     OlsLinearRegressionTrainer.LoadNameValue,
     OlsLinearRegressionTrainer.ShortName)]
 
-[assembly: LoadableClass(typeof(OlsLinearRegressionPredictor), null, typeof(SignatureLoadModel),
+[assembly: LoadableClass(typeof(OlsLinearRegressionModelParameters), null, typeof(SignatureLoadModel),
     "OLS Linear Regression Executor",
-    OlsLinearRegressionPredictor.LoaderSignature)]
+    OlsLinearRegressionModelParameters.LoaderSignature)]
 
 [assembly: LoadableClass(typeof(void), typeof(OlsLinearRegressionTrainer), null, typeof(SignatureEntryPointModule), OlsLinearRegressionTrainer.LoadNameValue)]
 
-namespace Microsoft.ML.Runtime.HalLearners
+namespace Microsoft.ML.Trainers.HalLearners
 {
     /// <include file='doc.xml' path='doc/members/member[@name="OLS"]/*' />
-    public sealed class OlsLinearRegressionTrainer : TrainerBase<OlsLinearRegressionPredictor>
+    public sealed class OlsLinearRegressionTrainer : TrainerEstimatorBase<RegressionPredictionTransformer<OlsLinearRegressionModelParameters>, OlsLinearRegressionModelParameters>
     {
-        public sealed class Arguments : LearnerInputBaseWithWeight
+        ///<summary> Advanced options for trainer.</summary>
+        public sealed class Options : LearnerInputBaseWithWeight
         {
             // Adding L2 regularization turns this into a form of ridge regression,
             // rather than, strictly speaking, ordinary least squares. But it is an
             // incredibly uesful thing to have around.
+            /// <summary>
+            /// L2 regularization weight. Adding L2 regularization turns this algorithm into a form of ridge regression,
+            /// rather than, strictly speaking, ordinary least squares.
+            /// </summary>
             [Argument(ArgumentType.AtMostOnce, HelpText = "L2 regularization weight", ShortName = "l2", SortOrder = 50)]
             [TGUI(SuggestedSweeps = "1e-6,0.1,1")]
             [TlcModule.SweepableDiscreteParamAttribute("L2Weight", new object[] { 1e-6f, 0.1f, 1f })]
-            public Float L2Weight = 1e-6f;
+            public float L2Weight = 1e-6f;
 
+            /// <summary>
+            /// Whether to calculate per parameter (e.g., the coefficient of the i-th input feature) significance statistics.
+            /// </summary>
             [Argument(ArgumentType.LastOccurenceWins, HelpText = "Whether to calculate per parameter significance statistics", ShortName = "sig")]
             public bool PerParameterSignificance = true;
         }
 
-        public const string LoadNameValue = "OLSLinearRegression";
-        public const string UserNameValue = "Ordinary Least Squares (Regression)";
-        public const string ShortName = "ols";
+        internal const string LoadNameValue = "OLSLinearRegression";
+        internal const string UserNameValue = "Ordinary Least Squares (Regression)";
+        internal const string ShortName = "ols";
         internal const string Summary = "The ordinary least square regression fits the target function as a linear function of the numerical features "
             + "that minimizes the square loss function.";
 
-        private readonly Float _l2Weight;
+        private readonly float _l2Weight;
         private readonly bool _perParameterSignificance;
 
-        public override PredictionKind PredictionKind => PredictionKind.Regression;
+        private protected override PredictionKind PredictionKind => PredictionKind.Regression;
 
         // The training performs two passes, only. Probably not worth caching.
         private static readonly TrainerInfo _info = new TrainerInfo(caching: false);
+
         public override TrainerInfo Info => _info;
 
-        public OlsLinearRegressionTrainer(IHostEnvironment env, Arguments args)
-            : base(env, LoadNameValue)
+        /// <summary>
+        /// Initializes a new instance of <see cref="OlsLinearRegressionTrainer"/>
+        /// </summary>
+        internal OlsLinearRegressionTrainer(IHostEnvironment env, Options options)
+            : base(Contracts.CheckRef(env, nameof(env)).Register(LoadNameValue), TrainerUtils.MakeR4VecFeature(options.FeatureColumn),
+                  TrainerUtils.MakeR4ScalarColumn(options.LabelColumn), TrainerUtils.MakeR4ScalarWeightColumn(options.WeightColumn))
         {
-            Host.CheckValue(args, nameof(args));
-            Host.CheckUserArg(args.L2Weight >= 0, nameof(args.L2Weight), "L2 regularization term cannot be negative");
-            _l2Weight = args.L2Weight;
-            _perParameterSignificance = args.PerParameterSignificance;
+            Host.CheckValue(options, nameof(options));
+            Host.CheckUserArg(options.L2Weight >= 0, nameof(options.L2Weight), "L2 regularization term cannot be negative");
+            _l2Weight = options.L2Weight;
+            _perParameterSignificance = options.PerParameterSignificance;
+        }
+
+        private protected override RegressionPredictionTransformer<OlsLinearRegressionModelParameters> MakeTransformer(OlsLinearRegressionModelParameters model, DataViewSchema trainSchema)
+             => new RegressionPredictionTransformer<OlsLinearRegressionModelParameters>(Host, model, trainSchema, FeatureColumn.Name);
+
+        private protected override SchemaShape.Column[] GetOutputColumnsCore(SchemaShape inputSchema)
+        {
+            return new[]
+            {
+                new SchemaShape.Column(DefaultColumnNames.Score, SchemaShape.Column.VectorKind.Scalar, NumberDataViewType.Single, false, new SchemaShape(AnnotationUtils.GetTrainerOutputAnnotation()))
+            };
         }
 
         /// <summary>
@@ -81,39 +103,40 @@ namespace Microsoft.ML.Runtime.HalLearners
         /// </summary>
         /// <param name="p">The quantity that should be clamped from 0 to 1</param>
         /// <returns>Either p, or 0 or 1 if it was outside the range 0 to 1</returns>
-        private static Double ProbClamp(Double p)
-            => Math.Max(0, Math.Min(p, 1));
+        private static Double ProbClamp(Double p) => Math.Max(0, Math.Min(p, 1));
 
-        public override OlsLinearRegressionPredictor Train(TrainContext context)
+        private protected override OlsLinearRegressionModelParameters TrainModelCore(TrainContext context)
         {
             using (var ch = Host.Start("Training"))
             {
                 ch.CheckValue(context, nameof(context));
                 var examples = context.TrainingSet;
-                ch.CheckParam(examples.Schema.Feature != null, nameof(examples), "Need a feature column");
-                ch.CheckParam(examples.Schema.Label != null, nameof(examples), "Need a label column");
+                ch.CheckParam(examples.Schema.Feature.HasValue, nameof(examples), "Need a feature column");
+                ch.CheckParam(examples.Schema.Label.HasValue, nameof(examples), "Need a labelColumn column");
 
-                // The label type must be either Float or a key type based on int (if allowKeyLabels is true).
-                var typeLab = examples.Schema.Label.Type;
-                if (typeLab != NumberType.Float)
-                    throw ch.Except("Incompatible label column type {0}, must be {1}", typeLab, NumberType.Float);
+                // The labelColumn type must be either Float or a key type based on int (if allowKeyLabels is true).
+                var typeLab = examples.Schema.Label.Value.Type;
+                if (typeLab != NumberDataViewType.Single)
+                    throw ch.Except("Incompatible labelColumn column type {0}, must be {1}", typeLab, NumberDataViewType.Single);
 
                 // The feature type must be a vector of Float.
-                var typeFeat = examples.Schema.Feature.Type;
-                if (!typeFeat.IsKnownSizeVector)
-                    throw ch.Except("Incompatible feature column type {0}, must be known sized vector of {1}", typeFeat, NumberType.Float);
-                if (typeFeat.ItemType != NumberType.Float)
-                    throw ch.Except("Incompatible feature column type {0}, must be vector of {1}", typeFeat, NumberType.Float);
+                var typeFeat = examples.Schema.Feature.Value.Type as VectorType;
+                if (typeFeat == null || !typeFeat.IsKnownSize)
+                    throw ch.Except("Incompatible feature column type {0}, must be known sized vector of {1}", typeFeat, NumberDataViewType.Single);
+                if (typeFeat.ItemType != NumberDataViewType.Single)
+                    throw ch.Except("Incompatible feature column type {0}, must be vector of {1}", typeFeat, NumberDataViewType.Single);
 
-                var cursorFactory = new FloatLabelCursor.Factory(examples, CursOpt.Label | CursOpt.Features);
+                CursOpt cursorOpt = CursOpt.Label | CursOpt.Features;
+                if (examples.Schema.Weight.HasValue)
+                    cursorOpt |= CursOpt.Weight;
 
-                var pred = TrainCore(ch, cursorFactory, typeFeat.VectorSize);
-                ch.Done();
-                return pred;
+                var cursorFactory = new FloatLabelCursor.Factory(examples, cursorOpt);
+
+                return TrainCore(ch, cursorFactory, typeFeat.Size);
             }
         }
 
-        private OlsLinearRegressionPredictor TrainCore(IChannel ch, FloatLabelCursor.Factory cursorFactory, int featureCount)
+        private OlsLinearRegressionModelParameters TrainCore(IChannel ch, FloatLabelCursor.Factory cursorFactory, int featureCount)
         {
             Host.AssertValue(ch);
             ch.AssertValue(cursorFactory);
@@ -141,12 +164,12 @@ namespace Microsoft.ML.Runtime.HalLearners
                     xty[0] += yi;
                     // Increment first element of lower triangular X'X
                     xtx[0] += 1;
-                    var values = cursor.Features.Values;
+                    var values = cursor.Features.GetValues();
 
                     if (cursor.Features.IsDense)
                     {
                         int ioff = 1;
-                        ch.Assert(cursor.Features.Count + 1 == m);
+                        ch.Assert(values.Length + 1 == m);
                         // Increment rest of first column of lower triangular X'X
                         for (int i = 1; i < m; i++)
                         {
@@ -164,8 +187,8 @@ namespace Microsoft.ML.Runtime.HalLearners
                     }
                     else
                     {
-                        var fIndices = cursor.Features.Indices;
-                        for (int ii = 0; ii < cursor.Features.Count; ++ii)
+                        var fIndices = cursor.Features.GetIndices();
+                        for (int ii = 0; ii < values.Length; ++ii)
                         {
                             int i = fIndices[ii] + 1;
                             int ioff = i * (i + 1) / 2;
@@ -183,7 +206,7 @@ namespace Microsoft.ML.Runtime.HalLearners
                 }
                 ch.Check(n > 0, "No training examples in dataset.");
                 if (cursor.BadFeaturesRowCount > 0)
-                    ch.Warning("Skipped {0} instances with missing features/label during training", cursor.SkippedRowCount);
+                    ch.Warning("Skipped {0} instances with missing features/labelColumn during training", cursor.SkippedRowCount);
 
                 if (_l2Weight > 0)
                 {
@@ -234,28 +257,30 @@ namespace Microsoft.ML.Runtime.HalLearners
             for (int i = 0; i < beta.Length; ++i)
                 ch.Check(FloatUtils.IsFinite(beta[i]), "Non-finite values detected in OLS solution");
 
-            var weights = VBufferUtils.CreateDense<Float>(beta.Length - 1);
+            var weightsValues = new float[beta.Length - 1];
             for (int i = 1; i < beta.Length; ++i)
-                weights.Values[i - 1] = (Float)beta[i];
-            var bias = (Float)beta[0];
+                weightsValues[i - 1] = (float)beta[i];
+            var weights = new VBuffer<float>(weightsValues.Length, weightsValues);
+
+            var bias = (float)beta[0];
             if (!(_l2Weight > 0) && m == n)
             {
                 // We would expect the solution to the problem to be exact in this case.
                 ch.Info("Number of examples equals number of parameters, solution is exact but no statistics can be derived");
-                return new OlsLinearRegressionPredictor(Host, ref weights, bias, null, null, null, 1, Float.NaN);
+                return new OlsLinearRegressionModelParameters(Host, in weights, bias);
             }
 
             Double rss = 0; // residual sum of squares
             Double tss = 0; // total sum of squares
             using (var cursor = cursorFactory.Create())
             {
-                var lrPredictor = new LinearRegressionPredictor(Host, ref weights, bias);
-                var lrMap = lrPredictor.GetMapper<VBuffer<Float>, Float>();
-                Float yh = default;
+                IValueMapper lrPredictor = new LinearRegressionModelParameters(Host, in weights, bias);
+                var lrMap = lrPredictor.GetMapper<VBuffer<float>, float>();
+                float yh = default;
                 while (cursor.MoveNext())
                 {
                     var features = cursor.Features;
-                    lrMap(ref features, ref yh);
+                    lrMap(in features, ref yh);
                     var e = cursor.Label - yh;
                     rss += e * e;
                     var ydm = cursor.Label - yMean;
@@ -278,7 +303,7 @@ namespace Microsoft.ML.Runtime.HalLearners
             // Also we can't estimate it, unless we can estimate the variance, which requires more examples than
             // parameters.
             if (!_perParameterSignificance || m >= n)
-                return new OlsLinearRegressionPredictor(Host, ref weights, bias, null, null, null, rSquared, rSquaredAdjusted);
+                return new OlsLinearRegressionModelParameters(Host, in weights, bias, rSquared: rSquared, rSquaredAdjusted: rSquaredAdjusted);
 
             ch.Assert(!Double.IsNaN(rSquaredAdjusted));
             var standardErrors = new Double[m];
@@ -298,7 +323,7 @@ namespace Microsoft.ML.Runtime.HalLearners
             {
                 // Iterate through all entries of inverse Hessian to make adjustment to variance.
                 int ioffset = 1;
-                Float reg = _l2Weight * _l2Weight * n;
+                float reg = _l2Weight * _l2Weight * n;
                 for (int iRow = 1; iRow < m; iRow++)
                 {
                     for (int iCol = 0; iCol <= iRow; iCol++)
@@ -321,16 +346,16 @@ namespace Microsoft.ML.Runtime.HalLearners
                 standardErrors[i] = Math.Sqrt(s2 * standardErrors[i]);
                 ch.Check(FloatUtils.IsFinite(standardErrors[i]), "Non-finite standard error detected from OLS solution");
                 tValues[i] = beta[i] / standardErrors[i];
-                pValues[i] = (Float)MathUtils.TStatisticToPValue(tValues[i], n - m);
+                pValues[i] = (float)MathUtils.TStatisticToPValue(tValues[i], n - m);
                 ch.Check(0 <= pValues[i] && pValues[i] <= 1, "p-Value calculated outside expected [0,1] range");
             }
 
-            return new OlsLinearRegressionPredictor(Host, ref weights, bias, standardErrors, tValues, pValues, rSquared, rSquaredAdjusted);
+            return new OlsLinearRegressionModelParameters(Host, in weights, bias, standardErrors, tValues, pValues, rSquared, rSquaredAdjusted);
         }
 
         internal static class Mkl
         {
-            private const string DllName = "MklImports";
+            private const string MklPath = "MklImports";
 
             public enum Layout
             {
@@ -344,7 +369,7 @@ namespace Microsoft.ML.Runtime.HalLearners
                 Lo = (byte)'L'
             }
 
-            [DllImport(DllName, EntryPoint = "LAPACKE_dpptrf")]
+            [DllImport(MklPath, CallingConvention = CallingConvention.Cdecl, EntryPoint = "LAPACKE_dpptrf"), SuppressUnmanagedCodeSecurity]
             private static extern int PptrfInternal(Layout layout, UpLo uplo, int n, Double[] ap);
 
             /// <summary>
@@ -379,7 +404,7 @@ namespace Microsoft.ML.Runtime.HalLearners
                 }
             }
 
-            [DllImport(DllName, EntryPoint = "LAPACKE_dpptrs")]
+            [DllImport(MklPath, CallingConvention = CallingConvention.Cdecl, EntryPoint = "LAPACKE_dpptrs"), SuppressUnmanagedCodeSecurity]
             private static extern int PptrsInternal(Layout layout, UpLo uplo, int n, int nrhs, Double[] ap, Double[] b, int ldb);
 
             /// <summary>
@@ -426,7 +451,7 @@ namespace Microsoft.ML.Runtime.HalLearners
 
             }
 
-            [DllImport(DllName, EntryPoint = "LAPACKE_dpptri")]
+            [DllImport(MklPath, CallingConvention = CallingConvention.Cdecl, EntryPoint = "LAPACKE_dpptri"), SuppressUnmanagedCodeSecurity]
             private static extern int PptriInternal(Layout layout, UpLo uplo, int n, Double[] ap);
 
             /// <summary>
@@ -466,29 +491,28 @@ namespace Microsoft.ML.Runtime.HalLearners
         [TlcModule.EntryPoint(Name = "Trainers.OrdinaryLeastSquaresRegressor",
             Desc = "Train an OLS regression model.",
             UserName = UserNameValue,
-            ShortName = ShortName,
-            XmlInclude = new[] { @"<include file='../Microsoft.ML.HalLearners/doc.xml' path='doc/members/member[@name=""OLS""]/*' />" })]
-        public static CommonOutputs.RegressionOutput TrainRegression(IHostEnvironment env, Arguments input)
+            ShortName = ShortName)]
+        internal static CommonOutputs.RegressionOutput TrainRegression(IHostEnvironment env, Options options)
         {
             Contracts.CheckValue(env, nameof(env));
             var host = env.Register("TrainOLS");
-            host.CheckValue(input, nameof(input));
-            EntryPointUtils.CheckInputArgs(host, input);
+            host.CheckValue(options, nameof(options));
+            EntryPointUtils.CheckInputArgs(host, options);
 
-            return LearnerEntryPointsUtils.Train<Arguments, CommonOutputs.RegressionOutput>(host, input,
-                () => new OlsLinearRegressionTrainer(host, input),
-                () => LearnerEntryPointsUtils.FindColumn(host, input.TrainingData.Schema, input.LabelColumn),
-                () => LearnerEntryPointsUtils.FindColumn(host, input.TrainingData.Schema, input.WeightColumn));
+            return LearnerEntryPointsUtils.Train<Options, CommonOutputs.RegressionOutput>(host, options,
+                () => new OlsLinearRegressionTrainer(host, options),
+                () => LearnerEntryPointsUtils.FindColumn(host, options.TrainingData.Schema, options.LabelColumn),
+                () => LearnerEntryPointsUtils.FindColumn(host, options.TrainingData.Schema, options.WeightColumn));
         }
     }
 
     /// <summary>
     /// A linear predictor for which per parameter significance statistics are available.
     /// </summary>
-    public sealed class OlsLinearRegressionPredictor : RegressionPredictor
+    public sealed class OlsLinearRegressionModelParameters : RegressionModelParameters
     {
-        public const string LoaderSignature = "OlsLinearRegressionExec";
-        public const string RegistrationName = "OlsLinearRegressionPredictor";
+        internal const string LoaderSignature = "OlsLinearRegressionExec";
+        internal const string RegistrationName = "OlsLinearRegressionPredictor";
 
         /// <summary>
         /// Version information to be saved in binary format
@@ -500,29 +524,20 @@ namespace Microsoft.ML.Runtime.HalLearners
                 verWrittenCur: 0x00010001,
                 verReadableCur: 0x00010001,
                 verWeCanReadBack: 0x00010001,
-                loaderSignature: LoaderSignature);
+                loaderSignature: LoaderSignature,
+                loaderAssemblyName: typeof(OlsLinearRegressionModelParameters).Assembly.FullName);
         }
-
-        // The following will be null iff RSquaredAdjusted is NaN.
-        private readonly Double[] _standardErrors;
-        private readonly Double[] _tValues;
-        private readonly Double[] _pValues;
-        private readonly Double _rSquared;
-        private readonly Double _rSquaredAdjusted;
 
         /// <summary>
         /// The coefficient of determination.
         /// </summary>
-        public Double RSquared
-        { get { return _rSquared; } }
-
+        public readonly double RSquared;
         /// <summary>
         /// The adjusted coefficient of determination. It is only possible to produce
         /// an adjusted R-squared if there are more examples than parameters in the model
         /// plus one. If this condition is not met, this value will be <c>NaN</c>.
         /// </summary>
-        public Double RSquaredAdjusted
-        { get { return _rSquaredAdjusted; } }
+        public readonly double RSquaredAdjusted;
 
         /// <summary>
         /// Whether the model has per parameter statistics. This is false iff
@@ -530,37 +545,51 @@ namespace Microsoft.ML.Runtime.HalLearners
         /// are all null. A model may not have per parameter statistics because either
         /// there were not more examples than parameters in the model, or because they
         /// were explicitly suppressed in training by setting
-        /// <see cref="OlsLinearRegressionTrainer.Arguments.PerParameterSignificance"/>
+        /// <see cref="OlsLinearRegressionTrainer.Options.PerParameterSignificance"/>
         /// to false.
         /// </summary>
-        public bool HasStatistics
-        { get { return _standardErrors != null; } }
+        public bool HasStatistics => StandardErrors != null;
 
         /// <summary>
         /// The standard error per model parameter, where the first corresponds to the bias,
         /// and all subsequent correspond to each weight in turn. This is <c>null</c> if and
         /// only if <see cref="HasStatistics"/> is <c>false</c>.
         /// </summary>
-        public IReadOnlyCollection<Double> StandardErrors
-        { get { return _standardErrors.AsReadOnly(); } }
+        public IReadOnlyList<double> StandardErrors => _standardErrors;
+
+        private readonly double[] _standardErrors;
 
         /// <summary>
         /// t-Statistic values corresponding to each of the model standard errors. This is
         /// <c>null</c> if and only if <see cref="HasStatistics"/> is <c>false</c>.
         /// </summary>
-        public IReadOnlyCollection<Double> TValues
-        { get { return _tValues.AsReadOnly(); } }
+        public IReadOnlyList<double> TValues => _tValues;
+
+        private readonly double[] _tValues;
 
         /// <summary>
         /// p-values corresponding to each of the model standard errors. This is <c>null</c>
         /// if and only if <see cref="HasStatistics"/> is <c>false</c>.
         /// </summary>
-        public IReadOnlyCollection<Double> PValues
-        { get { return _pValues.AsReadOnly(); } }
+        public IReadOnlyList<double> PValues => _pValues;
 
-        internal OlsLinearRegressionPredictor(IHostEnvironment env, ref VBuffer<Float> weights, Float bias,
-            Double[] standardErrors, Double[] tValues, Double[] pValues, Double rSquared, Double rSquaredAdjusted)
-            : base(env, RegistrationName, ref weights, bias)
+        private readonly double[] _pValues;
+
+        /// <summary>
+        /// Constructs a new OLS regression model parameters from trained model.
+        /// </summary>
+        /// <param name="env">The Host environment.</param>
+        /// <param name="weights">The weights for the linear model. The i-th element of weights is the coefficient
+        /// of the i-th feature. Note that this will take ownership of the <see cref="VBuffer{T}"/>.</param>
+        /// <param name="bias">The bias added to every output score.</param>
+        /// <param name="standardErrors">Optional: The statndard errors of the weights and bias.</param>
+        /// <param name="tValues">Optional: The t-statistics for the estimates of the weights and bias.</param>
+        /// <param name="pValues">Optional: The p-values of the weights and bias.</param>
+        /// <param name="rSquared">The coefficient of determination.</param>
+        /// <param name="rSquaredAdjusted">The adjusted coefficient of determination.</param>
+        internal OlsLinearRegressionModelParameters(IHostEnvironment env, in VBuffer<float> weights, float bias,
+            Double[] standardErrors = null, Double[] tValues = null, Double[] pValues = null, Double rSquared = 1, Double rSquaredAdjusted = float.NaN)
+            : base(env, RegistrationName, in weights, bias)
         {
             Contracts.AssertValueOrNull(standardErrors);
             Contracts.AssertValueOrNull(tValues);
@@ -591,11 +620,11 @@ namespace Microsoft.ML.Runtime.HalLearners
             _standardErrors = standardErrors;
             _tValues = tValues;
             _pValues = pValues;
-            _rSquared = rSquared;
-            _rSquaredAdjusted = rSquaredAdjusted;
+            RSquared = rSquared;
+            RSquaredAdjusted = rSquaredAdjusted;
         }
 
-        private OlsLinearRegressionPredictor(IHostEnvironment env, ModelLoadContext ctx)
+        private OlsLinearRegressionModelParameters(IHostEnvironment env, ModelLoadContext ctx)
             : base(env, RegistrationName, ctx)
         {
             // *** Binary format ***
@@ -609,9 +638,9 @@ namespace Microsoft.ML.Runtime.HalLearners
             Host.CheckDecode(Weight.IsDense);
             int m = Weight.Length + 1;
 
-            _rSquared = ctx.Reader.ReadDouble();
+            RSquared = ctx.Reader.ReadDouble();
             ProbCheckDecode(RSquared);
-            _rSquaredAdjusted = ctx.Reader.ReadDouble();
+            RSquaredAdjusted = ctx.Reader.ReadDouble();
             if (!Double.IsNaN(RSquaredAdjusted))
                 ProbCheckDecode(RSquaredAdjusted);
             bool hasStats = ctx.Reader.ReadBoolByte();
@@ -625,15 +654,16 @@ namespace Microsoft.ML.Runtime.HalLearners
 
             _tValues = ctx.Reader.ReadDoubleArray(m);
             TValueCheckDecode(Bias, _tValues[0]);
+            var weightValues = Weight.GetValues();
             for (int i = 1; i < m; ++i)
-                TValueCheckDecode(Weight.Values[i - 1], _tValues[i]);
+                TValueCheckDecode(weightValues[i - 1], _tValues[i]);
 
             _pValues = ctx.Reader.ReadDoubleArray(m);
             for (int i = 0; i < m; ++i)
                 ProbCheckDecode(_pValues[i]);
         }
 
-        protected override void SaveCore(ModelSaveContext ctx)
+        private protected override void SaveCore(ModelSaveContext ctx)
         {
             base.SaveCore(ctx);
             ctx.SetVersionInfo(GetVersionInfo());
@@ -649,11 +679,11 @@ namespace Microsoft.ML.Runtime.HalLearners
             //     double[#parameters]: t-statistics per parameter
             //     double[#parameters]: p-values per parameter
 
-            Contracts.Assert(0 <= _rSquared & _rSquared <= 1);
-            ctx.Writer.Write(_rSquared);
-            Contracts.Assert(Double.IsNaN(_rSquaredAdjusted) | (0 <= _rSquaredAdjusted & _rSquaredAdjusted <= 1));
-            ctx.Writer.Write(_rSquaredAdjusted);
-            Contracts.Assert(!Double.IsNaN(_rSquaredAdjusted) | !HasStatistics);
+            Contracts.Assert(0 <= RSquared & RSquared <= 1);
+            ctx.Writer.Write(RSquared);
+            Contracts.Assert(Double.IsNaN(RSquaredAdjusted) | (0 <= RSquaredAdjusted && RSquaredAdjusted <= 1));
+            ctx.Writer.Write(RSquaredAdjusted);
+            Contracts.Assert(!Double.IsNaN(RSquaredAdjusted) | !HasStatistics);
             ctx.Writer.WriteBoolByte(HasStatistics);
             if (!HasStatistics)
             {
@@ -663,9 +693,9 @@ namespace Microsoft.ML.Runtime.HalLearners
             Contracts.Assert(Weight.Length + 1 == _standardErrors.Length);
             Contracts.Assert(Weight.Length + 1 == _tValues.Length);
             Contracts.Assert(Weight.Length + 1 == _pValues.Length);
-            ctx.Writer.WriteDoublesNoCount(_standardErrors, m);
-            ctx.Writer.WriteDoublesNoCount(_tValues, m);
-            ctx.Writer.WriteDoublesNoCount(_pValues, m);
+            ctx.Writer.WriteDoublesNoCount(_standardErrors);
+            ctx.Writer.WriteDoublesNoCount(_tValues);
+            ctx.Writer.WriteDoublesNoCount(_pValues);
         }
 
         private static void TValueCheckDecode(Double param, Double tvalue)
@@ -678,18 +708,18 @@ namespace Microsoft.ML.Runtime.HalLearners
             Contracts.CheckDecode(0 <= p && p <= 1);
         }
 
-        public static OlsLinearRegressionPredictor Create(IHostEnvironment env, ModelLoadContext ctx)
+        private static OlsLinearRegressionModelParameters Create(IHostEnvironment env, ModelLoadContext ctx)
         {
             Contracts.CheckValue(env, nameof(env));
             env.CheckValue(ctx, nameof(ctx));
             ctx.CheckAtModel(GetVersionInfo());
-            return new OlsLinearRegressionPredictor(env, ctx);
+            return new OlsLinearRegressionModelParameters(env, ctx);
         }
 
-        public override void SaveSummary(TextWriter writer, RoleMappedSchema schema)
+        private protected override void SaveSummary(TextWriter writer, RoleMappedSchema schema)
         {
-            var names = default(VBuffer<DvText>);
-            MetadataUtils.GetSlotNames(schema, RoleMappedSchema.ColumnRole.Feature, Weight.Length, ref names);
+            var names = default(VBuffer<ReadOnlyMemory<char>>);
+            AnnotationUtils.GetSlotNames(schema, RoleMappedSchema.ColumnRole.Feature, Weight.Length, ref names);
 
             writer.WriteLine("Ordinary Least Squares Model Summary");
             writer.WriteLine("R-squared: {0:g4}", RSquared);
@@ -702,11 +732,11 @@ namespace Microsoft.ML.Runtime.HalLearners
                 const string format = "{0}\t{1}\t{2}\t{3:g4}\t{4:g4}\t{5:e4}";
                 writer.WriteLine(format, "", "Bias", Bias, _standardErrors[0], _tValues[0], _pValues[0]);
                 Contracts.Assert(Weight.IsDense);
-                var coeffs = Weight.Values;
+                var coeffs = Weight.GetValues();
                 for (int i = 0; i < coeffs.Length; i++)
                 {
                     var name = names.GetItemOrDefault(i);
-                    writer.WriteLine(format, i, DvText.Identical(name, DvText.Empty) ? $"f{i}" : name.ToString(),
+                    writer.WriteLine(format, i, name.IsEmpty ? $"f{i}" : name.ToString(),
                         coeffs[i], _standardErrors[i + 1], _tValues[i + 1], _pValues[i + 1]);
                 }
             }
@@ -717,35 +747,13 @@ namespace Microsoft.ML.Runtime.HalLearners
                 const string format = "{0}\t{1}\t{2}";
                 writer.WriteLine(format, "", "Bias", Bias);
                 Contracts.Assert(Weight.IsDense);
-                var coeffs = Weight.Values;
+                var coeffs = Weight.GetValues();
                 for (int i = 0; i < coeffs.Length; i++)
                 {
                     var name = names.GetItemOrDefault(i);
-                    writer.WriteLine(format, i, DvText.Identical(name, DvText.Empty) ? $"f{i}" : name.ToString(), coeffs[i]);
+                    writer.WriteLine(format, i, name.IsEmpty ? $"f{i}" : name.ToString(), coeffs[i]);
                 }
             }
-        }
-
-        public override void GetFeatureWeights(ref VBuffer<Float> weights)
-        {
-            if (_pValues == null)
-            {
-                base.GetFeatureWeights(ref weights);
-                return;
-            }
-
-            var values = weights.Values;
-            var size = _pValues.Length - 1;
-            if (Utils.Size(values) < size)
-                values = new Float[size];
-            for (int i = 0; i < size; i++)
-            {
-                var score = -(Float)Math.Log(_pValues[i + 1]);
-                if (score > Float.MaxValue)
-                    score = Float.MaxValue;
-                values[i] = score;
-            }
-            weights = new VBuffer<Float>(size, values, weights.Indices);
         }
     }
 }
