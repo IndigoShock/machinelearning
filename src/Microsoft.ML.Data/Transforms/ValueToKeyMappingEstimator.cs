@@ -2,11 +2,12 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Data.DataView;
 using Microsoft.ML.Data;
 
-namespace Microsoft.ML.Transforms.Conversions
+namespace Microsoft.ML.Transforms
 {
     /// <include file='doc.xml' path='doc/members/member[@name="ValueToKeyMappingEstimator"]/*' />
     public sealed class ValueToKeyMappingEstimator : IEstimator<ValueToKeyMappingTransformer>
@@ -32,17 +33,38 @@ namespace Microsoft.ML.Transforms.Conversions
         /// <summary>
         /// Describes how the transformer handles one column pair.
         /// </summary>
-        public class ColumnInfo
+        public abstract class ColumnOptionsBase
         {
             public readonly string OutputColumnName;
             public readonly string InputColumnName;
             public readonly SortOrder Sort;
             public readonly int MaxNumKeys;
-            public readonly string[] Term;
+            public IReadOnlyList<string> Term => TermArray;
+            internal readonly string[] TermArray;
             public readonly bool TextKeyValues;
 
-            protected internal string Terms { get; set; }
+            [BestFriend]
+            internal string Terms { get; set; }
 
+            [BestFriend]
+            private protected ColumnOptionsBase(string outputColumnName, string inputColumnName,
+                int maxNumKeys, SortOrder sort, string[] term, bool textKeyValues)
+            {
+                Contracts.CheckNonWhiteSpace(outputColumnName, nameof(outputColumnName));
+                OutputColumnName = outputColumnName;
+                InputColumnName = inputColumnName ?? outputColumnName;
+                Sort = sort;
+                MaxNumKeys = maxNumKeys;
+                TermArray = term;
+                TextKeyValues = textKeyValues;
+            }
+        }
+
+        /// <summary>
+        /// Describes how the transformer handles one column pair.
+        /// </summary>
+        public sealed class ColumnOptions : ColumnOptionsBase
+        {
             /// <summary>
             /// Describes how the transformer handles one column pair.
             /// </summary>
@@ -53,25 +75,18 @@ namespace Microsoft.ML.Transforms.Conversions
             /// If <see cref="SortOrder.Value"/>, items are sorted according to their default comparison, for example, text sorting will be case sensitive (for example, 'A' then 'Z' then 'a').</param>
             /// <param name="term">List of terms.</param>
             /// <param name="textKeyValues">Whether key value metadata should be text, regardless of the actual input type.</param>
-            public ColumnInfo(string outputColumnName, string inputColumnName = null,
+            public ColumnOptions(string outputColumnName, string inputColumnName = null,
                 int maxNumKeys = Defaults.MaxNumKeys,
                 SortOrder sort = Defaults.Sort,
                 string[] term = null,
-                bool textKeyValues = false
-                )
+                bool textKeyValues = false)
+                : base(outputColumnName, inputColumnName, maxNumKeys, sort, term, textKeyValues)
             {
-                Contracts.CheckNonWhiteSpace(outputColumnName, nameof(outputColumnName));
-                OutputColumnName = outputColumnName;
-                InputColumnName = inputColumnName ?? outputColumnName;
-                Sort = sort;
-                MaxNumKeys = maxNumKeys;
-                Term = term;
-                TextKeyValues = textKeyValues;
             }
         }
 
         private readonly IHost _host;
-        private readonly ColumnInfo[] _columns;
+        private readonly ColumnOptionsBase[] _columns;
         private readonly IDataView _keyData;
 
         /// <summary>
@@ -84,11 +99,11 @@ namespace Microsoft.ML.Transforms.Conversions
         /// <param name="sort">How items should be ordered when vectorized. If <see cref="SortOrder.Occurrence"/> choosen they will be in the order encountered.
         /// If <see cref="SortOrder.Value"/>, items are sorted according to their default comparison, for example, text sorting will be case sensitive (for example, 'A' then 'Z' then 'a').</param>
         internal ValueToKeyMappingEstimator(IHostEnvironment env, string outputColumnName, string inputColumnName = null, int maxNumKeys = Defaults.MaxNumKeys, SortOrder sort = Defaults.Sort) :
-           this(env, new [] { new ColumnInfo(outputColumnName, inputColumnName ?? outputColumnName, maxNumKeys, sort) })
+           this(env, new [] { new ColumnOptions(outputColumnName, inputColumnName ?? outputColumnName, maxNumKeys, sort) })
         {
         }
 
-        internal ValueToKeyMappingEstimator(IHostEnvironment env, ColumnInfo[] columns, IDataView keyData = null)
+        internal ValueToKeyMappingEstimator(IHostEnvironment env, ColumnOptionsBase[] columns, IDataView keyData = null)
         {
             Contracts.CheckValue(env, nameof(env));
             _host = env.Register(nameof(ValueToKeyMappingEstimator));

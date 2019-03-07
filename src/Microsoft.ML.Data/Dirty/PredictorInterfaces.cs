@@ -6,10 +6,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Microsoft.Data.DataView;
-using Microsoft.ML.Calibrator;
+using Microsoft.ML.Calibrators;
 using Microsoft.ML.Data;
 
-namespace Microsoft.ML.Internal.Internallearn
+namespace Microsoft.ML.Model
 {
     /// <summary>
     /// A generic interface for models that can average parameters from multiple instance of self
@@ -146,7 +146,8 @@ namespace Microsoft.ML.Internal.Internallearn
     /// <summary>
     /// Interface implemented by components that can assign weights to features.
     /// </summary>
-    public interface IHaveFeatureWeights
+    [BestFriend]
+    internal interface IHaveFeatureWeights
     {
         /// <summary>
         /// Returns the weights for the features.

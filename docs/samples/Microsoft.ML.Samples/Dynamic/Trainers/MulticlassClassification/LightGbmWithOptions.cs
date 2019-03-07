@@ -7,7 +7,7 @@ using static Microsoft.ML.LightGBM.Options;
 
 namespace Microsoft.ML.Samples.Dynamic.Trainers.MulticlassClassification
 {
-    class LightGbmWithOptions
+    public static class LightGbmWithOptions
     {
         // This example requires installation of additional nuget package <a href="https://www.nuget.org/packages/Microsoft.ML.LightGBM/">Microsoft.ML.LightGBM</a>.
         public static void Example()
@@ -16,11 +16,11 @@ namespace Microsoft.ML.Samples.Dynamic.Trainers.MulticlassClassification
             // as a catalog of available operations and as the source of randomness.
             var mlContext = new MLContext(seed: 0);
 
-            // Create in-memory examples as C# native class.
+            // Create a list of data examples.
             var examples = DatasetUtils.GenerateRandomMulticlassClassificationExamples(1000);
 
-            // Convert native C# class to IDataView, a consumble format to ML.NET functions.
-            var dataView = mlContext.Data.ReadFromEnumerable(examples);
+            // Convert the examples list to an IDataView object, which is consumable by ML.NET API.
+            var dataView = mlContext.Data.LoadFromEnumerable(examples);
 
             //////////////////// Data Preview ////////////////////
             // Label    Features
@@ -35,11 +35,11 @@ namespace Microsoft.ML.Samples.Dynamic.Trainers.MulticlassClassification
             var pipeline = mlContext.Transforms.Conversion.MapValueToKey("LabelIndex", "Label")
                         .Append(mlContext.MulticlassClassification.Trainers.LightGbm(new Options
                         {
-                            LabelColumn = "LabelIndex",
-                            FeatureColumn = "Features",
+                            LabelColumnName = "LabelIndex",
+                            FeatureColumnName = "Features",
                             Booster = new DartBooster.Options
                             {
-                                DropRate = 0.15,
+                                TreeDropFraction = 0.15,
                                 XgboostDartMode = false
                             }
                         }))
@@ -60,12 +60,12 @@ namespace Microsoft.ML.Samples.Dynamic.Trainers.MulticlassClassification
             var metrics = mlContext.MulticlassClassification.Evaluate(dataWithPredictions, label: "LabelIndex");
 
             // Check if metrics are reasonable.
-            Console.WriteLine($"Macro accuracy: {metrics.AccuracyMacro:F4}, Micro accuracy: {metrics.AccuracyMicro:F4}.");
+            Console.WriteLine($"Macro accuracy: {metrics.MacroAccuracy:F4}, Micro accuracy: {metrics.MicroAccuracy:F4}.");
             // Console output:
             //   Macro accuracy: 0.8619, Micro accuracy: 0.8611.
 
             // IDataView with predictions, to an IEnumerable<DatasetUtils.MulticlassClassificationExample>.
-            var nativePredictions = mlContext.CreateEnumerable<DatasetUtils.MulticlassClassificationExample>(dataWithPredictions, false).ToList();
+            var nativePredictions = mlContext.Data.CreateEnumerable<DatasetUtils.MulticlassClassificationExample>(dataWithPredictions, false).ToList();
 
             // Get schema object out of the prediction. It contains metadata such as the mapping from predicted label index
             // (e.g., 1) to its actual label (e.g., "AA").

@@ -24,19 +24,7 @@ namespace Microsoft.ML.Tests.TrainerEstimators
                             new TextLoader.Column("F2", DataKind.Int32, 2),
                             new TextLoader.Column("Rest", DataKind.Single, new [] { new TextLoader.Range(3, 9) })
                         }
-                    }).Read(GetDataPath(TestDatasets.breastCancer.trainFilename));
-        }
-
-        [Fact]
-        public void TestEstimatorRandom()
-        {
-            var dataView = GetBreastCancerDataviewWithTextColumns();
-            var pipe = ML.BinaryClassification.Trainers.Random();
-
-            // Test only that the schema propagation works.
-            // REVIEW: the save/load is not preserving the full state of the random predictor. This is unfortunate, but we don't care too much at this point.
-            TestEstimatorCore(pipe, new EmptyDataView(Env, dataView.Schema));
-            Done();
+                    }).Load(GetDataPath(TestDatasets.breastCancer.trainFilename));
         }
 
         [Fact]

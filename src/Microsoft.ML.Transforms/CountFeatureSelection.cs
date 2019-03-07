@@ -10,7 +10,6 @@ using Microsoft.Data.DataView;
 using Microsoft.ML;
 using Microsoft.ML.CommandLine;
 using Microsoft.ML.Data;
-using Microsoft.ML.EntryPoints;
 using Microsoft.ML.Internal.Utilities;
 using Microsoft.ML.Transforms.FeatureSelection;
 
@@ -26,7 +25,7 @@ namespace Microsoft.ML.Transforms.FeatureSelection
         internal const string UserName = "Count Feature Selection Transform";
 
         private readonly IHost _host;
-        private readonly ColumnInfo[] _columns;
+        private readonly ColumnOptions[] _columns;
 
         [BestFriend]
         internal static class Defaults
@@ -48,29 +47,31 @@ namespace Microsoft.ML.Transforms.FeatureSelection
         /// <summary>
         /// Describes how the transformer handles one column pair.
         /// </summary>
-        public sealed class ColumnInfo
+        public sealed class ColumnOptions
         {
             /// <summary> Name of the column resulting from the transformation of <see cref="InputColumnName"/>.</summary>
             public readonly string Name;
             /// <summary> Name of the column to transform.</summary>
             public readonly string InputColumnName;
-            /// <summary> If the count of non-default values for a slot is greater than or equal to this threshold in the training data, the slot is preserved.</summary>
-            public readonly long MinCount;
+            /// <summary>If the count of non-default values for a slot is greater than or equal to this threshold in the training data, the slot is preserved.</summary>
+            public readonly long Count;
 
             /// <summary>
             /// Describes the parameters of the feature selection process for a column pair.
             /// </summary>
             /// <param name="name">Name of the column resulting from the transformation of <paramref name="inputColumnName"/>.</param>
             /// <param name="inputColumnName">Name of the column to transform. If set to <see langword="null"/>, the value of the <paramref name="name"/> will be used as source.</param>
-            /// <param name="minCount">If the count of non-default values for a slot is greater than or equal to this threshold in the training data, the slot is preserved.</param>
-            public ColumnInfo(string name, string inputColumnName = null, long minCount = Defaults.Count)
+            /// <param name="count">If the count of non-default values for a slot is greater than or equal to this threshold in the training data, the slot is preserved.</param>
+
+            public ColumnOptions(string name, string inputColumnName = null, long count = Defaults.Count)
             {
                 Name = name;
                 Contracts.CheckValue(Name, nameof(Name));
 
                 InputColumnName = inputColumnName ?? name;
                 Contracts.CheckValue(InputColumnName, nameof(InputColumnName));
-                MinCount = minCount;
+                Contracts.CheckParam(count >= 0, nameof(count), "Must be non-negative.");
+                Count = count;
             }
         }
 
@@ -84,7 +85,7 @@ namespace Microsoft.ML.Transforms.FeatureSelection
         /// ]]>
         /// </format>
         /// </example>
-        internal CountFeatureSelectingEstimator(IHostEnvironment env, params ColumnInfo[] columns)
+        internal CountFeatureSelectingEstimator(IHostEnvironment env, params ColumnOptions[] columns)
         {
             Contracts.CheckValue(env, nameof(env));
             _host = env.Register(RegistrationName);
@@ -106,7 +107,7 @@ namespace Microsoft.ML.Transforms.FeatureSelection
         /// </format>
         /// </example>
         internal CountFeatureSelectingEstimator(IHostEnvironment env, string outputColumnName, string inputColumnName = null, long minCount = Defaults.Count)
-            : this(env, new ColumnInfo(outputColumnName, inputColumnName ?? outputColumnName, minCount))
+            : this(env, new ColumnOptions(outputColumnName, inputColumnName ?? outputColumnName, minCount))
         {
         }
 
@@ -149,7 +150,7 @@ namespace Microsoft.ML.Transforms.FeatureSelection
             using (var ch = _host.Start("Dropping Slots"))
             {
                 // If no slots should be dropped from a column, use copy column to generate the corresponding output column.
-                SlotsDroppingTransformer.ColumnInfo[] dropSlotsColumns;
+                SlotsDroppingTransformer.ColumnOptions[] dropSlotsColumns;
                 (string outputColumnName, string inputColumnName)[] copyColumnsPairs;
                 CreateDropAndCopyColumns(_columns, size, scores, out int[] selectedCount, out dropSlotsColumns, out copyColumnsPairs);
 
@@ -183,21 +184,21 @@ namespace Microsoft.ML.Transforms.FeatureSelection
             host.CheckUserArg(Utils.Size(options.Columns) > 0, nameof(options.Columns));
             host.CheckUserArg(options.Count > 0, nameof(options.Count));
 
-            var columnInfos = options.Columns.Select(inColName => new ColumnInfo(inColName, minCount: options.Count)).ToArray();
+            var columnOptions = options.Columns.Select(inColName => new ColumnOptions(inColName, count: options.Count)).ToArray();
 
-            return new CountFeatureSelectingEstimator(env, columnInfos).Fit(input).Transform(input) as IDataTransform;
+            return new CountFeatureSelectingEstimator(env, columnOptions).Fit(input).Transform(input) as IDataTransform;
         }
 
-        private static void CreateDropAndCopyColumns(ColumnInfo[] columnInfos, int size, long[][] scores,
-            out int[] selectedCount, out SlotsDroppingTransformer.ColumnInfo[] dropSlotsColumns, out (string outputColumnName, string inputColumnName)[] copyColumnsPairs)
+        private static void CreateDropAndCopyColumns(ColumnOptions[] columnOptions, int size, long[][] scores,
+            out int[] selectedCount, out SlotsDroppingTransformer.ColumnOptions[] dropSlotsColumns, out (string outputColumnName, string inputColumnName)[] copyColumnsPairs)
         {
             Contracts.Assert(size > 0);
             Contracts.Assert(Utils.Size(scores) == size);
-            Contracts.AssertValue(columnInfos);
-            Contracts.Assert(Utils.Size(columnInfos) == size);
+            Contracts.AssertValue(columnOptions);
+            Contracts.Assert(Utils.Size(columnOptions) == size);
 
             selectedCount = new int[scores.Length];
-            var dropSlotsCols = new List<SlotsDroppingTransformer.ColumnInfo>();
+            var dropSlotsCols = new List<SlotsDroppingTransformer.ColumnOptions>();
             var copyCols = new List<(string outputColumnName, string inputColumnName)>();
             for (int i = 0; i < size; i++)
             {
@@ -206,11 +207,11 @@ namespace Microsoft.ML.Transforms.FeatureSelection
                 selectedCount[i] = 0;
                 for (int j = 0; j < score.Length; j++)
                 {
-                    if (score[j] < columnInfos[i].MinCount)
+                    if (score[j] < columnOptions[i].Count)
                     {
                         // Adjacent slots are combined into a single range.
                         int min = j;
-                        while (j < score.Length && score[j] < columnInfos[i].MinCount)
+                        while (j < score.Length && score[j] < columnOptions[i].Count)
                             j++;
                         int max = j - 1;
                         slots.Add((min, max));
@@ -221,9 +222,9 @@ namespace Microsoft.ML.Transforms.FeatureSelection
                         selectedCount[i]++;
                 }
                 if (slots.Count <= 0)
-                    copyCols.Add((columnInfos[i].Name, columnInfos[i].InputColumnName));
+                    copyCols.Add((columnOptions[i].Name, columnOptions[i].InputColumnName));
                 else
-                    dropSlotsCols.Add(new SlotsDroppingTransformer.ColumnInfo(columnInfos[i].Name, columnInfos[i].InputColumnName, slots.ToArray()));
+                    dropSlotsCols.Add(new SlotsDroppingTransformer.ColumnOptions(columnOptions[i].Name, columnOptions[i].InputColumnName, slots.ToArray()));
             }
             dropSlotsColumns = dropSlotsCols.ToArray();
             copyColumnsPairs = copyCols.ToArray();

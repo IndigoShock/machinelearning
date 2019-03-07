@@ -2,13 +2,11 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using Microsoft.ML.Calibrator;
+using Microsoft.ML.Calibrators;
 using Microsoft.ML.Data;
 using Microsoft.ML.RunTests;
 using Microsoft.ML.Trainers;
-using Microsoft.ML.Trainers.Online;
 using Microsoft.ML.Transforms;
-using Microsoft.ML.Transforms.Conversions;
 using Xunit;
 
 namespace Microsoft.ML.Tests.TrainerEstimators
@@ -44,7 +42,7 @@ namespace Microsoft.ML.Tests.TrainerEstimators
         {
             var (pipeline, data) = GetMultiClassPipeline();
             var sdcaTrainer = ML.BinaryClassification.Trainers.StochasticDualCoordinateAscentNonCalibrated(
-                new SdcaNonCalibratedBinaryTrainer.Options { MaxIterations = 100, Shuffle = true, NumThreads = 1 });
+                new SdcaNonCalibratedBinaryTrainer.Options { NumberOfIterations = 100, Shuffle = true, NumberOfThreads = 1 });
 
             pipeline = pipeline.Append(ML.MulticlassClassification.Trainers.OneVersusAll(sdcaTrainer, useProbabilities: false))
                     .Append(new KeyToValueMappingEstimator(Env, "PredictedLabel"));
@@ -54,15 +52,15 @@ namespace Microsoft.ML.Tests.TrainerEstimators
         }
 
         /// <summary>
-        /// Pkpd trainer
+        /// Pairwise Coupling trainer
         /// </summary>
         [Fact]
-        public void Pkpd()
+        public void PairwiseCouplingTrainer()
         {
             var (pipeline, data) = GetMultiClassPipeline();
 
             var sdcaTrainer = ML.BinaryClassification.Trainers.StochasticDualCoordinateAscentNonCalibrated(
-                new SdcaNonCalibratedBinaryTrainer.Options { MaxIterations = 100, Shuffle = true, NumThreads = 1 });
+                new SdcaNonCalibratedBinaryTrainer.Options { NumberOfIterations = 100, Shuffle = true, NumberOfThreads = 1 });
 
             pipeline = pipeline.Append(ML.MulticlassClassification.Trainers.PairwiseCoupling(sdcaTrainer))
                     .Append(ML.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
@@ -80,17 +78,17 @@ namespace Microsoft.ML.Tests.TrainerEstimators
                 Columns = TestDatasets.irisData.GetLoaderColumns(),
                 Separators = new[] { ',' },
             };
-            var reader = new TextLoader(Env, options: options);
+            var loader = new TextLoader(Env, options: options);
 
-            var data = reader.Read(GetDataPath(TestDatasets.irisData.trainFilename));
+            var data = loader.Load(GetDataPath(TestDatasets.irisData.trainFilename));
 
             var sdcaTrainer = ML.BinaryClassification.Trainers.StochasticDualCoordinateAscentNonCalibrated(
                 new SdcaNonCalibratedBinaryTrainer.Options {
-                    LabelColumn = "Label",
-                    FeatureColumn = "Vars",
-                    MaxIterations = 100,
+                    LabelColumnName = "Label",
+                    FeatureColumnName = "Vars",
+                    NumberOfIterations = 100,
                     Shuffle = true,
-                    NumThreads = 1, });
+                    NumberOfThreads = 1, });
 
             var pipeline = new ColumnConcatenatingEstimator(Env, "Vars", "SepalLength", "SepalWidth", "PetalLength", "PetalWidth")
                 .Append(new ValueToKeyMappingEstimator(Env, "Label"), TransformerScope.TrainTest)

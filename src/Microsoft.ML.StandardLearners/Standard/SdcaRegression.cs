@@ -9,8 +9,8 @@ using Microsoft.ML.CommandLine;
 using Microsoft.ML.Data;
 using Microsoft.ML.Data.Conversion;
 using Microsoft.ML.EntryPoints;
-using Microsoft.ML.Internal.Internallearn;
 using Microsoft.ML.Internal.Utilities;
+using Microsoft.ML.Model;
 using Microsoft.ML.Trainers;
 
 [assembly: LoadableClass(SdcaRegressionTrainer.Summary, typeof(SdcaRegressionTrainer), typeof(SdcaRegressionTrainer.Options),
@@ -21,7 +21,10 @@ using Microsoft.ML.Trainers;
 
 namespace Microsoft.ML.Trainers
 {
-    /// <include file='doc.xml' path='doc/members/member[@name="SDCA"]/*' />
+    /// <summary>
+    /// The <see cref="IEstimator{TTransformer}"/> for training a regression model using the stochastic dual coordinate ascent method.
+    /// </summary>
+    /// <include file='doc.xml' path='doc/members/member[@name="SDCA_remarks"]/*' />
     public sealed class SdcaRegressionTrainer : SdcaTrainerBase<SdcaRegressionTrainer.Options, RegressionPredictionTransformer<LinearRegressionModelParameters>, LinearRegressionModelParameters>
     {
         internal const string LoadNameValue = "SDCAR";
@@ -29,11 +32,23 @@ namespace Microsoft.ML.Trainers
         internal const string ShortName = "sasdcar";
         internal const string Summary = "The SDCA linear regression trainer.";
 
+        /// <summary>
+        /// Options for the <see cref="SdcaRegressionTrainer"/>.
+        /// </summary>
         public sealed class Options : OptionsBase
         {
+            /// <summary>
+            /// A custom <a href="tmpurl_loss">loss</a>.
+            /// </summary>
+            /// <value>
+            /// Defaults to <see cref="SquaredLoss"/>
+            /// </value>
             [Argument(ArgumentType.Multiple, HelpText = "Loss Function", ShortName = "loss", SortOrder = 50)]
             public ISupportSdcaRegressionLossFactory LossFunction = new SquaredLossFactory();
 
+            /// <summary>
+            /// Create the <see cref="Options"/> object.
+            /// </summary>
             public Options()
             {
                 // Using a higher default tolerance for better RMS.
@@ -87,7 +102,7 @@ namespace Microsoft.ML.Trainers
         }
 
         internal SdcaRegressionTrainer(IHostEnvironment env, Options options)
-            : this(env, options, options.FeatureColumn, options.LabelColumn)
+            : this(env, options, options.FeatureColumnName, options.LabelColumnName)
         {
         }
 
@@ -118,15 +133,7 @@ namespace Microsoft.ML.Trainers
 
         // REVIEW: No extra benefits from using more threads in training.
         private protected override int ComputeNumThreads(FloatLabelCursor.Factory cursorFactory)
-        {
-            int maxThreads;
-            if (Host.ConcurrencyFactor < 1)
-                maxThreads = Math.Min(2, Math.Max(1, Environment.ProcessorCount / 2));
-            else
-                maxThreads = Host.ConcurrencyFactor;
-
-            return maxThreads;
-        }
+            => Math.Min(2, Math.Max(1, Environment.ProcessorCount / 2));
 
         // Using a different logic for default L2 parameter in regression.
         private protected override float TuneDefaultL2(IChannel ch, int maxIterations, long rowCount, int numThreads)
@@ -176,9 +183,9 @@ namespace Microsoft.ML.Trainers
             host.CheckValue(input, nameof(input));
             EntryPointUtils.CheckInputArgs(host, input);
 
-            return LearnerEntryPointsUtils.Train<SdcaRegressionTrainer.Options, CommonOutputs.RegressionOutput>(host, input,
+            return TrainerEntryPointsUtils.Train<SdcaRegressionTrainer.Options, CommonOutputs.RegressionOutput>(host, input,
                 () => new SdcaRegressionTrainer(host, input),
-                () => LearnerEntryPointsUtils.FindColumn(host, input.TrainingData.Schema, input.LabelColumn));
+                () => TrainerEntryPointsUtils.FindColumn(host, input.TrainingData.Schema, input.LabelColumnName));
         }
     }
 }

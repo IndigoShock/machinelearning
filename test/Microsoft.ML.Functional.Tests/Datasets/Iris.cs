@@ -37,7 +37,7 @@ namespace Microsoft.ML.Functional.Tests.Datasets
         public static IDataView LoadAsRankingProblem(MLContext mlContext, string filePath, bool hasHeader, char separatorChar, int seed = 1)
         {
             // Load the Iris data.
-            var data = mlContext.Data.ReadFromTextFile<Iris>(filePath, hasHeader: hasHeader, separatorChar: separatorChar);
+            var data = mlContext.Data.LoadFromTextFile<Iris>(filePath, hasHeader: hasHeader, separatorChar: separatorChar);
 
             // Create a function that generates a random groupId.
             var rng = new Random(seed);
@@ -74,5 +74,32 @@ namespace Microsoft.ML.Functional.Tests.Datasets
         public float SepalWidth { get; set; }
         public float PetalLength { get; set; }
         public float PetalWidth { get; set; }
+    }
+
+    /// <summary>
+    /// A class for the Iris dataset with an extra float column.
+    /// </summary>
+    internal sealed class IrisWithOneExtraColumn
+    {
+        public float Label { get; set; }
+        public float SepalLength { get; set; }
+        public float SepalWidth { get; set; }
+        public float PetalLength { get; set; }
+        public float PetalWidth { get; set; }
+        public float Float1 { get; set; }
+    }
+
+    /// <summary>
+    /// A class for the Iris dataset with two extra float columns.
+    /// </summary>
+    internal sealed class IrisWithTwoExtraColumns
+    {
+        public float Label { get; set; }
+        public float SepalLength { get; set; }
+        public float SepalWidth { get; set; }
+        public float PetalLength { get; set; }
+        public float PetalWidth { get; set; }
+        public float Float1 { get; set; }
+        public float Float2 { get; set; }
     }
 }

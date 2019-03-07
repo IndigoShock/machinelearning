@@ -3,7 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 using Microsoft.Data.DataView;
-using Microsoft.ML.Calibrator;
+using Microsoft.ML.Calibrators;
 using Microsoft.ML.Data;
 using Microsoft.ML.Trainers;
 using Xunit;
@@ -82,7 +82,7 @@ namespace Microsoft.ML.Tests.TrainerEstimators
             var calibratorTestData = GetCalibratorTestData();
 
             // pav calibrator
-            var pavCalibratorEstimator = new PavCalibratorEstimator(Env);
+            var pavCalibratorEstimator = new IsotonicCalibratorEstimator(Env);
             var pavCalibratorTransformer = pavCalibratorEstimator.Fit(calibratorTestData.ScoredData);
 
             //check data

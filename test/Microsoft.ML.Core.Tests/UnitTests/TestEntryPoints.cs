@@ -8,28 +8,21 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Microsoft.Data.DataView;
+using Microsoft.ML.Calibrators;
 using Microsoft.ML.Core.Tests.UnitTests;
 using Microsoft.ML.Data;
 using Microsoft.ML.Data.IO;
 using Microsoft.ML.EntryPoints;
-using Microsoft.ML.EntryPoints.JsonUtils;
 using Microsoft.ML.ImageAnalytics;
-using Microsoft.ML.Internal.Calibration;
-using Microsoft.ML.Internal.Internallearn;
 using Microsoft.ML.Internal.Utilities;
 using Microsoft.ML.LightGBM;
+using Microsoft.ML.Model;
 using Microsoft.ML.Model.OnnxConverter;
 using Microsoft.ML.TestFramework.Attributes;
 using Microsoft.ML.Trainers;
 using Microsoft.ML.Trainers.Ensemble;
 using Microsoft.ML.Trainers.FastTree;
-using Microsoft.ML.Trainers.HalLearners;
-using Microsoft.ML.Trainers.PCA;
 using Microsoft.ML.Transforms;
-using Microsoft.ML.Transforms.Categorical;
-using Microsoft.ML.Transforms.Conversions;
-using Microsoft.ML.Transforms.Normalizers;
-using Microsoft.ML.Transforms.Projections;
 using Microsoft.ML.Transforms.Text;
 using Microsoft.ML.Transforms.TimeSeries;
 using Newtonsoft.Json;
@@ -165,21 +158,6 @@ namespace Microsoft.ML.RunTests
             var data2 = ModelOperations.Apply(Env, new ModelOperations.ApplyTransformModelInput() { Data = dataView, TransformModel = data1.Model });
 
             CheckSameValues(data1.OutputData, data2.OutputData);
-            Done();
-        }
-
-        [Fact]
-        public void EntryPointCaching()
-        {
-            var dataView = GetBreastCancerDataviewWithTextColumns();
-
-            dataView = Env.CreateTransform("Term{col=F1}", dataView);
-
-            var cached1 = Cache.CacheData(Env, new Cache.CacheInput() { Data = dataView, Caching = Cache.CachingType.Memory });
-            CheckSameValues(dataView, cached1.OutputData);
-
-            var cached2 = Cache.CacheData(Env, new Cache.CacheInput() { Data = dataView, Caching = Cache.CachingType.Disk });
-            CheckSameValues(dataView, cached2.OutputData);
             Done();
         }
 
@@ -348,7 +326,7 @@ namespace Microsoft.ML.RunTests
             Env.ComponentCatalog.RegisterAssembly(typeof(LightGbmBinaryModelParameters).Assembly);
             Env.ComponentCatalog.RegisterAssembly(typeof(TensorFlowTransformer).Assembly);
             Env.ComponentCatalog.RegisterAssembly(typeof(ImageLoadingTransformer).Assembly);
-            Env.ComponentCatalog.RegisterAssembly(typeof(SymSgdClassificationTrainer).Assembly);
+            Env.ComponentCatalog.RegisterAssembly(typeof(SymbolicStochasticGradientDescentClassificationTrainer).Assembly);
             Env.ComponentCatalog.RegisterAssembly(typeof(SaveOnnxCommand).Assembly);
             Env.ComponentCatalog.RegisterAssembly(typeof(TimeSeriesProcessingEntryPoints).Assembly);
             Env.ComponentCatalog.RegisterAssembly(typeof(ParquetLoader).Assembly);
@@ -387,18 +365,18 @@ namespace Microsoft.ML.RunTests
 
             InputBuilder ib1 = new InputBuilder(Env, typeof(LogisticRegression.Options), catalog);
             // Ensure that InputBuilder unwraps the Optional<string> correctly.
-            var weightType = ib1.GetFieldTypeOrNull("WeightColumn");
+            var weightType = ib1.GetFieldTypeOrNull("ExampleWeightColumnName");
             Assert.True(weightType.Equals(typeof(string)));
 
             var instance = ib1.GetInstance() as LogisticRegression.Options;
-            Assert.True(instance.WeightColumn == null);
+            Assert.True(instance.ExampleWeightColumnName == null);
 
-            ib1.TrySetValue("WeightColumn", "OtherWeight");
-            Assert.Equal("OtherWeight", instance.WeightColumn);
+            ib1.TrySetValue("ExampleWeightColumnName", "OtherWeight");
+            Assert.Equal("OtherWeight", instance.ExampleWeightColumnName);
 
             var tok = (JToken)JValue.CreateString("AnotherWeight");
-            ib1.TrySetValueJson("WeightColumn", tok);
-            Assert.Equal("AnotherWeight", instance.WeightColumn);
+            ib1.TrySetValueJson("ExampleWeightColumnName", tok);
+            Assert.Equal("AnotherWeight", instance.ExampleWeightColumnName);
         }
 
         [Fact]
@@ -446,8 +424,8 @@ namespace Microsoft.ML.RunTests
                 var lrInput = new LogisticRegression.Options
                 {
                     TrainingData = data,
-                    L1Weight = (Single)0.1 * i,
-                    L2Weight = (Single)0.01 * (1 + i),
+                    L1Regularization = (Single)0.1 * i,
+                    L2Regularization = (Single)0.01 * (1 + i),
                     NormalizeFeatures = NormalizeOption.No
                 };
                 predictorModels[i] = LogisticRegression.TrainBinary(Env, lrInput).PredictorModel;
@@ -740,8 +718,8 @@ namespace Microsoft.ML.RunTests
             {
                 var data = splitOutput.TrainData[i];
                 data = new RandomFourierFeaturizingEstimator(Env, new[] {
-                    new RandomFourierFeaturizingEstimator.ColumnInfo("Features1", 10, false, "Features"),
-                    new RandomFourierFeaturizingEstimator.ColumnInfo("Features2", 10, false, "Features"),
+                    new RandomFourierFeaturizingEstimator.ColumnOptions("Features1", 10, false, "Features"),
+                    new RandomFourierFeaturizingEstimator.ColumnOptions("Features2", 10, false, "Features"),
                 }).Fit(data).Transform(data);
 
                 data = new ColumnConcatenatingTransformer(Env, "Features", new[] { "Features1", "Features2" }).Transform(data);
@@ -750,8 +728,8 @@ namespace Microsoft.ML.RunTests
                 var lrInput = new LogisticRegression.Options
                 {
                     TrainingData = data,
-                    L1Weight = (Single)0.1 * i,
-                    L2Weight = (Single)0.01 * (1 + i),
+                    L1Regularization = (Single)0.1 * i,
+                    L2Regularization = (Single)0.01 * (1 + i),
                     NormalizeFeatures = NormalizeOption.Yes
                 };
                 predictorModels[i] = LogisticRegression.TrainBinary(Env, lrInput).PredictorModel;
@@ -1011,8 +989,8 @@ namespace Microsoft.ML.RunTests
                 var lrInput = new LogisticRegression.Options
                 {
                     TrainingData = data,
-                    L1Weight = (Single)0.1 * i,
-                    L2Weight = (Single)0.01 * (1 + i),
+                    L1Regularization = (Single)0.1 * i,
+                    L2Regularization = (Single)0.01 * (1 + i),
                     NormalizeFeatures = NormalizeOption.Yes
                 };
                 predictorModels[i] = LogisticRegression.TrainBinary(Env, lrInput).PredictorModel;
@@ -1192,8 +1170,8 @@ namespace Microsoft.ML.RunTests
             {
                 var data = splitOutput.TrainData[i];
                 data = new RandomFourierFeaturizingEstimator(Env, new[] {
-                    new RandomFourierFeaturizingEstimator.ColumnInfo("Features1", 10, false, "Features"),
-                    new RandomFourierFeaturizingEstimator.ColumnInfo("Features2", 10, false, "Features"),
+                    new RandomFourierFeaturizingEstimator.ColumnOptions("Features1", 10, false, "Features"),
+                    new RandomFourierFeaturizingEstimator.ColumnOptions("Features2", 10, false, "Features"),
                 }).Fit(data).Transform(data);
                 data = new ColumnConcatenatingTransformer(Env, "Features", new[] { "Features1", "Features2" }).Transform(data);
 
@@ -1338,16 +1316,16 @@ namespace Microsoft.ML.RunTests
             {
                 var data = splitOutput.TrainData[i];
                 data = new OneHotEncodingEstimator(Env, "Cat").Fit(data).Transform(data);
-                data = new ColumnConcatenatingTransformer(Env, new ColumnConcatenatingTransformer.ColumnInfo("Features", i % 2 == 0 ? new[] { "Features", "Cat" } : new[] { "Cat", "Features" })).Transform(data);
+                data = new ColumnConcatenatingTransformer(Env, new ColumnConcatenatingTransformer.ColumnOptions("Features", i % 2 == 0 ? new[] { "Features", "Cat" } : new[] { "Cat", "Features" })).Transform(data);
                 if (i % 2 == 0)
                 {
                     var lrInput = new LogisticRegression.Options
                     {
                         TrainingData = data,
                         NormalizeFeatures = NormalizeOption.Yes,
-                        NumThreads = 1,
-                        ShowTrainingStats = true,
-                        StdComputer = new ComputeLRTrainingStdThroughHal()
+                        NumberOfThreads = 1,
+                        ShowTrainingStatistics = true,
+                        ComputeStandardDeviation = new ComputeLRTrainingStdThroughMkl()
                     };
                     predictorModels[i] = LogisticRegression.TrainBinary(Env, lrInput).PredictorModel;
                     var transformModel = new TransformModelImpl(Env, data, splitOutput.TrainData[i]);
@@ -2488,7 +2466,7 @@ namespace Microsoft.ML.RunTests
             var options = new LegacySdcaBinaryTrainer.Options()
             {
                 NormalizeFeatures = NormalizeOption.Yes,
-                CheckFrequency = 42
+                ConvergenceCheckFrequency = 42
             };
 
             var inputBindingMap = new Dictionary<string, List<ParameterBinding>>();
@@ -2503,7 +2481,7 @@ namespace Microsoft.ML.RunTests
 
             var expected =
                 @"{
-  ""CheckFrequency"": 42,
+  ""ConvergenceCheckFrequency"": 42,
   ""TrainingData"": ""$data"",
   ""NormalizeFeatures"": ""Yes""
 }";
@@ -2519,7 +2497,7 @@ namespace Microsoft.ML.RunTests
   ""LossFunction"": {
     ""Name"": ""HingeLoss""
   },
-  ""CheckFrequency"": 42,
+  ""ConvergenceCheckFrequency"": 42,
   ""TrainingData"": ""$data"",
   ""NormalizeFeatures"": ""Yes""
 }";
@@ -2538,7 +2516,7 @@ namespace Microsoft.ML.RunTests
       ""Margin"": 2.0
     }
   },
-  ""CheckFrequency"": 42,
+  ""ConvergenceCheckFrequency"": 42,
   ""TrainingData"": ""$data"",
   ""NormalizeFeatures"": ""Yes""
 }";
@@ -2719,7 +2697,7 @@ namespace Microsoft.ML.RunTests
         [Fact]
         public void EntryPointKMeans()
         {
-            TestEntryPointRoutine("Train-Tiny-28x28.txt", "Trainers.KMeansPlusPlusClusterer", "col=Weight:R4:0 col=Features:R4:1-784", ",'InitAlgorithm':'KMeansPlusPlus'");
+            TestEntryPointRoutine("Train-Tiny-28x28.txt", "Trainers.KMeansPlusPlusClusterer", "col=Weight:R4:0 col=Features:R4:1-784", ",'InitializationAlgorithm':'KMeansPlusPlus'");
         }
 
         [Fact]
@@ -3342,9 +3320,9 @@ namespace Microsoft.ML.RunTests
             {
                 TrainingData = dataView,
                 NormalizeFeatures = NormalizeOption.Yes,
-                NumThreads = 1,
-                ShowTrainingStats = true,
-                StdComputer = new ComputeLRTrainingStdThroughHal()
+                NumberOfThreads = 1,
+                ShowTrainingStatistics = true,
+                ComputeStandardDeviation = new ComputeLRTrainingStdThroughMkl()
             };
             var model = LogisticRegression.TrainBinary(Env, lrInput).PredictorModel;
 
@@ -3352,8 +3330,8 @@ namespace Microsoft.ML.RunTests
             {
                 TrainingData = dataView,
                 NormalizeFeatures = NormalizeOption.Yes,
-                NumThreads = 1,
-                ShowTrainingStats = true
+                NumberOfThreads = 1,
+                ShowTrainingStatistics = true
             };
             var mcModel = LogisticRegression.TrainMultiClass(Env, mcLrInput).PredictorModel;
 
@@ -3549,10 +3527,10 @@ namespace Microsoft.ML.RunTests
 
             var fastTree = Trainers.FastTree.FastTree.TrainBinary(Env, new FastTreeBinaryClassificationTrainer.Options
             {
-                FeatureColumn = "Features",
-                NumTrees = 5,
-                NumLeaves = 4,
-                LabelColumn = DefaultColumnNames.Label,
+                FeatureColumnName = "Features",
+                NumberOfTrees = 5,
+                NumberOfLeaves = 4,
+                LabelColumnName = DefaultColumnNames.Label,
                 TrainingData = concat.OutputData
             });
 
@@ -3997,9 +3975,9 @@ namespace Microsoft.ML.RunTests
                             'Shuffle': false,
                             'CheckFrequency': null,
                             'BiasLearningRate': 0.0,
-                            'LabelColumn': 'Label',
+                            'LabelColumnName': 'Label',
                             'TrainingData': '$Var_51d3ddc9792d4c6eb975e600e87b8cbc',
-                            'FeatureColumn': 'Features',
+                            'FeatureColumnName': 'Features',
                             'NormalizeFeatures': 'Auto',
                             'Caching': 'Auto'
                         },
@@ -4168,10 +4146,10 @@ namespace Microsoft.ML.RunTests
                                         'NumThreads': 1,
                                         'DenseOptimizer': false,
                                         'EnforceNonNegativity': false,
-                                        'WeightColumn': 'Weight1',
-                                        'LabelColumn': 'Label',
+                                        'ExampleWeightColumnName': 'Weight1',
+                                        'LabelColumnName': 'Label',
                                         'TrainingData': '$Var_8b36a1e70c9f4504973140ad15eac72f',
-                                        'FeatureColumn': 'Features',
+                                        'FeatureColumnName': 'Features',
                                         'NormalizeFeatures': 'Auto',
                                         'Caching': 'Auto'
                                     },
@@ -4354,9 +4332,9 @@ namespace Microsoft.ML.RunTests
                                         'Shuffle': true,
                                         'CheckFrequency': null,
                                         'BiasLearningRate': 0.0,
-                                        'LabelColumn': 'Label',
+                                        'LabelColumnName': 'Label',
                                         'TrainingData': '$Var_a060169d8a924964b71447904c0d2ee9',
-                                        'FeatureColumn': 'Features',
+                                        'FeatureColumnName': 'Features',
                                         'NormalizeFeatures': 'Auto',
                                         'Caching': 'Auto'
                                     },
@@ -4591,10 +4569,10 @@ namespace Microsoft.ML.RunTests
                                         'NumThreads': 1,
                                         'DenseOptimizer': false,
                                         'EnforceNonNegativity': false,
-                                        'WeightColumn': null,
-                                        'LabelColumn': 'Label',
+                                        'ExampleWeightColumnName': null,
+                                        'LabelColumnName': 'Label',
                                         'TrainingData': '$Var_fb8137cb48ac49a7b1b56aa3ed5e0b23',
-                                        'FeatureColumn': 'Features',
+                                        'FeatureColumnName': 'Features',
                                         'NormalizeFeatures': 'Auto',
                                         'Caching': 'Auto'
                                     },
@@ -4761,9 +4739,9 @@ namespace Microsoft.ML.RunTests
                                         'Shuffle': true,
                                         'CheckFrequency': null,
                                         'BiasLearningRate': 0.0,
-                                        'LabelColumn': 'Label',
+                                        'LabelColumnName': 'Label',
                                         'TrainingData': '$Var_44f5c60e439b49fe9e5bf372be4613ee',
-                                        'FeatureColumn': 'Features',
+                                        'FeatureColumnName': 'Features',
                                         'NormalizeFeatures': 'Auto',
                                         'Caching': 'Auto'
                                     },
@@ -4983,18 +4961,18 @@ namespace Microsoft.ML.RunTests
                             }, {
                                 'Name': 'Trainers.FastTreeRanker',
                                 'Inputs': {
-                                    'CustomGains': '0,3,7,15,31',
-                                    'TrainDcg': false,
+                                    'CustomGains': [0,3,7,15,31],
+                                    'UseDcg': false,
                                     'SortingAlgorithm': 'DescendingStablePessimistic',
-                                    'LambdaMartMaxTruncation': 100,
+                                    'NdcgTruncationLevel': 100,
                                     'ShiftedNdcg': false,
                                     'CostFunctionParam': 'w',
                                     'DistanceWeight2': false,
                                     'NormalizeQueryLambdas': false,
                                     'BestStepRankingRegressionTrees': false,
                                     'UseLineSearch': false,
-                                    'NumPostBracketSteps': 0,
-                                    'MinStepSize': 0.0,
+                                    'MaximumNumberOfLineSearchSteps': 0,
+                                    'MinimumStepSize': 0.0,
                                     'OptimizationAlgorithm': 'GradientDescent',
                                     'EarlyStoppingRule': null,
                                     'EarlyStoppingMetrics': 1,
@@ -5002,12 +4980,12 @@ namespace Microsoft.ML.RunTests
                                     'UseTolerantPruning': false,
                                     'PruningThreshold': 0.004,
                                     'PruningWindowSize': 5,
-                                    'LearningRates': 0.2,
+                                    'LearningRate': 0.2,
                                     'Shrinkage': 1.0,
                                     'DropoutRate': 0.0,
                                     'GetDerivativesSampleRate': 1,
                                     'WriteLastEnsemble': false,
-                                    'MaxTreeOutput': 100.0,
+                                    'MaximumTreeOutput': 100.0,
                                     'RandomStart': false,
                                     'FilterZeroLambdas': false,
                                     'BaselineScoresFormula': null,
@@ -5017,47 +4995,46 @@ namespace Microsoft.ML.RunTests
                                         'Name': 'Single',
                                         'Settings': {}
                                     },
-                                    'NumThreads': 1,
-                                    'RngSeed': 123,
-                                    'FeatureSelectSeed': 123,
+                                    'NumberOfThreads': 1,
+                                    'Seed': 123,
+                                    'FeatureSelectionSeed': 123,
                                     'EntropyCoefficient': 0.0,
                                     'HistogramPoolSize': -1,
                                     'DiskTranspose': null,
                                     'FeatureFlocks': true,
                                     'CategoricalSplit': false,
-                                    'MaxCategoricalGroupsPerNode': 64,
-                                    'MaxCategoricalSplitPoints': 64,
-                                    'MinDocsPercentageForCategoricalSplit': 0.001,
-                                    'MinDocsForCategoricalSplit': 100,
+                                    'MaximumCategoricalGroupCountPerNode': 64,
+                                    'MaximumCategoricalSplitPointCount': 64,
+                                    'MinimumExampleFractionForCategoricalSplit': 0.001,
+                                    'MinimumExamplesForCategoricalSplit': 100,
                                     'Bias': 0.0,
                                     'Bundling': 'None',
-                                    'MaxBins': 255,
+                                    'MaximumBinCountPerFeature': 255,
                                     'SparsifyThreshold': 0.7,
                                     'FeatureFirstUsePenalty': 0.0,
                                     'FeatureReusePenalty': 0.0,
                                     'GainConfidenceLevel': 0.0,
                                     'SoftmaxTemperature': 0.0,
-                                    'ExecutionTimes': false,
-                                    'NumLeaves': 20,
-                                    'MinDocumentsInLeafs': 10,
-                                    'NumTrees': 100,
+                                    'ExecutionTime': false,
+                                    'NumberOfLeaves': 20,
+                                    'MinimumExampleCountPerLeaf': 10,
+                                    'NumberOfTrees': 100,
                                     'FeatureFraction': 1.0,
                                     'BaggingSize': 0,
-                                    'BaggingTrainFraction': 0.7,
-                                    'SplitFraction': 1.0,
+                                    'BaggingExampleFraction': 0.7,
+                                    'FeatureFractionPerSplit': 1.0,
                                     'Smoothing': 0.0,
                                     'AllowEmptyTrees': true,
                                     'FeatureCompressionLevel': 1,
                                     'CompressEnsemble': false,
-                                    'MaxTreesAfterCompression': -1,
                                     'PrintTestGraph': false,
                                     'PrintTrainValidGraph': false,
                                     'TestFrequency': 2147483647,
-                                    'GroupIdColumn': 'GroupId1',
-                                    'WeightColumn': null,
-                                    'LabelColumn': 'Label1',
+                                    'RowGroupColumnName': 'GroupId1',
+                                    'ExampleWeightColumnName': null,
+                                    'LabelColumnName': 'Label1',
                                     'TrainingData': '$Var_8f51ed90f5b642b2a80eeb628d67a5b3',
-                                    'FeatureColumn': 'Features',
+                                    'FeatureColumnName': 'Features',
                                     'NormalizeFeatures': 'Auto',
                                     'Caching': 'Auto'
                                 },
@@ -5269,9 +5246,9 @@ namespace Microsoft.ML.RunTests
                                         'Shuffle': true,
                                         'CheckFrequency': null,
                                         'BiasLearningRate': 0.0,
-                                        'LabelColumn': 'Label',
+                                        'LabelColumnName': 'Label',
                                         'TrainingData': '$Var_9aa1732198964d7f979a0bbec5db66c2',
-                                        'FeatureColumn': 'Features',
+                                        'FeatureColumnName': 'Features',
                                         'NormalizeFeatures': 'Auto',
                                         'Caching': 'Auto'
                                     },
@@ -5284,10 +5261,10 @@ namespace Microsoft.ML.RunTests
                                 'Model': '$Var_a229f40df6494a93a794ffd5480d5549'
                             },
                             'UseProbabilities': true,
-                            'WeightColumn': null,
-                            'LabelColumn': 'Label',
+                            'ExampleWeightColumnName': null,
+                            'LabelColumnName': 'Label',
                             'TrainingData': '$Var_672f860e44304ba8bd1c1a6e4b5ba9c5',
-                            'FeatureColumn': 'Features',
+                            'FeatureColumnName': 'Features',
                             'NormalizeFeatures': 'Auto',
                             'Caching': 'Auto'
                         },
@@ -5439,9 +5416,9 @@ namespace Microsoft.ML.RunTests
                                         'InitialWeights': null,
                                         'InitialWeightsDiameter': 0.0,
                                         'Shuffle': false,
-                                        'LabelColumn': 'Label',
+                                        'LabelColumnName': 'Label',
                                         'TrainingData': '$Var_9ccc8bce4f6540eb8a244ab40585602a',
-                                        'FeatureColumn': 'Features',
+                                        'FeatureColumnName': 'Features',
                                         'NormalizeFeatures': 'Auto',
                                         'Caching': 'Auto'
                                     },
@@ -5454,10 +5431,10 @@ namespace Microsoft.ML.RunTests
                                 'Model': '$Var_b47f7facc1c540e39d8b82ab64df6592'
                             },
                             'UseProbabilities': true,
-                            'WeightColumn': null,
-                            'LabelColumn': 'Label',
+                            'ExampleWeightColumnName': null,
+                            'LabelColumnName': 'Label',
                             'TrainingData': '$Var_f38b99289df746319edd57a3ccfb85a2',
-                            'FeatureColumn': 'Features',
+                            'FeatureColumnName': 'Features',
                             'NormalizeFeatures': 'Auto',
                             'Caching': 'Auto'
                         },

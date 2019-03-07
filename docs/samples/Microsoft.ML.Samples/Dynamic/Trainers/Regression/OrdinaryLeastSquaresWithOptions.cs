@@ -1,13 +1,13 @@
 ﻿using System;
 using Microsoft.ML.Data;
 using Microsoft.ML.SamplesUtils;
-using Microsoft.ML.Trainers.HalLearners;
+using Microsoft.ML.Trainers;
 
 namespace Microsoft.ML.Samples.Dynamic.Trainers.Regression
 {
     public static class OrdinaryLeastSquaresWithOptions
     {
-        // This example requires installation of additional nuget package <a href="https://www.nuget.org/packages/Microsoft.ML.HalLearners/">Microsoft.ML.HalLearners</a>.
+        // This example requires installation of additional nuget package <a href="https://www.nuget.org/packages/Microsoft.ML.Mkl.Components/">Microsoft.ML.Mkl.Components</a>.
         // In this examples we will use the housing price dataset. The goal is to predict median home value.
         // For more details about this dataset, please see https://archive.ics.uci.edu/ml/machine-learning-databases/housing/
         public static void Example()
@@ -19,11 +19,11 @@ namespace Microsoft.ML.Samples.Dynamic.Trainers.Regression
             // as well as the source of randomness.
             var mlContext = new MLContext(seed: 3);
 
-            // Creating a data reader, based on the format of the data
+            // Creating a data loader, based on the format of the data
             // The data is tab separated with all numeric columns.
             // The first column being the label and rest are numeric features
             // Here only seven numeric columns are used as features
-            var dataView = mlContext.Data.ReadFromTextFile(dataFile, new TextLoader.Options
+            var dataView = mlContext.Data.LoadFromTextFile(dataFile, new TextLoader.Options
             {
                 Separators = new[] { '\t' },
                 HasHeader = true,
@@ -44,10 +44,10 @@ namespace Microsoft.ML.Samples.Dynamic.Trainers.Regression
 
             // Create the estimator, here we only need OrdinaryLeastSquares trainer 
             // as data is already processed in a form consumable by the trainer
-            var pipeline = mlContext.Regression.Trainers.OrdinaryLeastSquares(new OlsLinearRegressionTrainer.Options()
+            var pipeline = mlContext.Regression.Trainers.OrdinaryLeastSquares(new OrdinaryLeastSquaresRegressionTrainer.Options()
             {
-                L2Weight = 0.1f,
-                PerParameterSignificance = false
+                L2Regularization = 0.1f,
+                CalculateStatistics = false
             });
             var model = pipeline.Fit(split.TrainSet);
 

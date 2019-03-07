@@ -6,7 +6,6 @@ using Microsoft.ML.Data;
 using Microsoft.ML.RunTests;
 using Microsoft.ML.Trainers;
 using Microsoft.ML.Transforms;
-using Microsoft.ML.Transforms.Conversions;
 using Xunit;
 
 namespace Microsoft.ML.Tests.Scenarios.Api
@@ -22,10 +21,10 @@ namespace Microsoft.ML.Tests.Scenarios.Api
         public void Metacomponents()
         {
             var ml = new MLContext();
-            var data = ml.Data.ReadFromTextFile<IrisData>(GetDataPath(TestDatasets.irisData.trainFilename), separatorChar: ',');
+            var data = ml.Data.LoadFromTextFile<IrisData>(GetDataPath(TestDatasets.irisData.trainFilename), separatorChar: ',');
 
             var sdcaTrainer = ml.BinaryClassification.Trainers.StochasticDualCoordinateAscentNonCalibrated(
-                new SdcaNonCalibratedBinaryTrainer.Options { MaxIterations = 100, Shuffle = true, NumThreads = 1, });
+                new SdcaNonCalibratedBinaryTrainer.Options { NumberOfIterations = 100, Shuffle = true, NumberOfThreads = 1, });
 
             var pipeline = new ColumnConcatenatingEstimator (ml, "Features", "SepalLength", "SepalWidth", "PetalLength", "PetalWidth")
                 .Append(ml.Transforms.Conversion.MapValueToKey("Label"), TransformerScope.TrainTest)

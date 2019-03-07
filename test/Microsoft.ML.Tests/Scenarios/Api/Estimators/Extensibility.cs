@@ -8,7 +8,6 @@ using Microsoft.ML.Data;
 using Microsoft.ML.RunTests;
 using Microsoft.ML.Trainers;
 using Microsoft.ML.Transforms;
-using Microsoft.ML.Transforms.Conversions;
 using Xunit;
 
 namespace Microsoft.ML.Tests.Scenarios.Api
@@ -28,7 +27,7 @@ namespace Microsoft.ML.Tests.Scenarios.Api
 
             var ml = new MLContext();
             var data = ml.Data.CreateTextLoader(TestDatasets.irisData.GetLoaderColumns(), separatorChar: ',')
-                .Read(dataPath);
+                .Load(dataPath);
 
             Action<IrisData, IrisData> action = (i, j) =>
             {
@@ -42,14 +41,14 @@ namespace Microsoft.ML.Tests.Scenarios.Api
                 .Append(new CustomMappingEstimator<IrisData, IrisData>(ml, action, null), TransformerScope.TrainTest)
                 .Append(new ValueToKeyMappingEstimator(ml, "Label"), TransformerScope.TrainTest)
                 .Append(ml.MulticlassClassification.Trainers.StochasticDualCoordinateAscent(
-                    new SdcaMultiClassTrainer.Options { MaxIterations = 100, Shuffle = true, NumThreads = 1 }))
+                    new SdcaMultiClassTrainer.Options { NumberOfIterations = 100, Shuffle = true, NumberOfThreads = 1 }))
                 .Append(new KeyToValueMappingEstimator(ml, "PredictedLabel"));
 
             var model = pipeline.Fit(data).GetModelFor(TransformerScope.Scoring);
             var engine = model.CreatePredictionEngine<IrisDataNoLabel, IrisPrediction>(ml);
 
-            var testLoader = ml.Data.ReadFromTextFile(dataPath, TestDatasets.irisData.GetLoaderColumns(), separatorChar: ',');
-            var testData = ml.CreateEnumerable<IrisData>(testLoader, false);
+            var testLoader = ml.Data.LoadFromTextFile(dataPath, TestDatasets.irisData.GetLoaderColumns(), separatorChar: ',');
+            var testData = ml.Data.CreateEnumerable<IrisData>(testLoader, false);
             foreach (var input in testData.Take(20))
             {
                 var prediction = engine.Predict(input);

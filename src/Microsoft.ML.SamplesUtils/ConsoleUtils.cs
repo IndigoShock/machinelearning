@@ -16,7 +16,7 @@ namespace Microsoft.ML.SamplesUtils
         public static void PrintMetrics(BinaryClassificationMetrics metrics)
         {
             Console.WriteLine($"Accuracy: {metrics.Accuracy:F2}");
-            Console.WriteLine($"AUC: {metrics.Auc:F2}");
+            Console.WriteLine($"AUC: {metrics.AreaUnderRocCurve:F2}");
             Console.WriteLine($"F1 Score: {metrics.F1Score:F2}");
             Console.WriteLine($"Negative Precision: {metrics.NegativePrecision:F2}");
             Console.WriteLine($"Negative Recall: {metrics.NegativeRecall:F2}");
@@ -31,9 +31,21 @@ namespace Microsoft.ML.SamplesUtils
         public static void PrintMetrics(CalibratedBinaryClassificationMetrics metrics)
         {
             PrintMetrics(metrics as BinaryClassificationMetrics);
-            Console.WriteLine($"LogLoss: {metrics.LogLoss:F2}");
-            Console.WriteLine($"LogLossReduction: {metrics.LogLossReduction:F2}");
+            Console.WriteLine($"Log Loss: {metrics.LogLoss:F2}");
+            Console.WriteLine($"Log Loss Reduction: {metrics.LogLossReduction:F2}");
             Console.WriteLine($"Entropy: {metrics.Entropy:F2}");
+        }
+
+        /// <summary>
+        /// Pretty-print MultiClassClassifierMetrics objects.
+        /// </summary>
+        /// <param name="metrics"><see cref="MultiClassClassifierMetrics"/> object.</param>
+        public static void PrintMetrics(MultiClassClassifierMetrics metrics)
+        {
+            Console.WriteLine($"Micro Accuracy: {metrics.MicroAccuracy:F2}");
+            Console.WriteLine($"Macro Accuracy: {metrics.MacroAccuracy:F2}");
+            Console.WriteLine($"Log Loss: {metrics.LogLoss:F2}");
+            Console.WriteLine($"Log Loss Reduction: {metrics.LogLossReduction:F2}");
         }
 
         /// <summary>
@@ -42,10 +54,9 @@ namespace Microsoft.ML.SamplesUtils
         /// <param name="metrics">Regression metrics.</param>
         public static void PrintMetrics(RegressionMetrics metrics)
         {
-            Console.WriteLine($"L1: {metrics.L1:F2}");
-            Console.WriteLine($"L2: {metrics.L2:F2}");
-            Console.WriteLine($"LossFunction: {metrics.LossFn:F2}");
-            Console.WriteLine($"RMS: {metrics.Rms:F2}");
+            Console.WriteLine($"Mean Absolute Error: {metrics.MeanAbsoluteError:F2}");
+            Console.WriteLine($"Mean Square dError: {metrics.MeanSquaredError:F2}");
+            Console.WriteLine($"Root Mean Squared Error: {metrics.RootMeanSquaredError:F2}");
             Console.WriteLine($"RSquared: {metrics.RSquared:F2}");
         }
 
@@ -55,8 +66,8 @@ namespace Microsoft.ML.SamplesUtils
         /// <param name="metrics">Ranker metrics.</param>
         public static void PrintMetrics(RankingMetrics metrics)
         {
-            Console.WriteLine($"DCG: {string.Join(", ", metrics.Dcg.Select((d, i) => $"@{i + 1}:{d:F2}").ToArray())}");
-            Console.WriteLine($"NDCG: {string.Join(", ", metrics.Ndcg.Select((d, i) => $"@{i + 1}:{d:F2}").ToArray())}");
+            Console.WriteLine($"DCG: {string.Join(", ", metrics.DiscountedCumulativeGains.Select((d, i) => $"@{i + 1}:{d:F2}").ToArray())}");
+            Console.WriteLine($"NDCG: {string.Join(", ", metrics.NormalizedDiscountedCumulativeGains.Select((d, i) => $"@{i + 1}:{d:F2}").ToArray())}");
         }
     }
 }

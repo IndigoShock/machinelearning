@@ -19,9 +19,9 @@ namespace Microsoft.ML.Tests.Scenarios.Api
         public void TrainWithInitialPredictor()
         {
 
-            var ml = new MLContext(seed: 1, conc: 1);
+            var ml = new MLContext(seed: 1);
 
-            var data = ml.Data.ReadFromTextFile<SentimentData>(GetDataPath(TestDatasets.Sentiment.trainFilename), hasHeader: true);
+            var data = ml.Data.LoadFromTextFile<SentimentData>(GetDataPath(TestDatasets.Sentiment.trainFilename), hasHeader: true);
 
             // Pipeline.
             var pipeline = ml.Transforms.Text.FeaturizeText("Features", "SentimentText");
@@ -32,7 +32,7 @@ namespace Microsoft.ML.Tests.Scenarios.Api
 
             // Train the first predictor.
             var trainer = ml.BinaryClassification.Trainers.StochasticDualCoordinateAscentNonCalibrated(
-                new SdcaNonCalibratedBinaryTrainer.Options { NumThreads = 1 });
+                new SdcaNonCalibratedBinaryTrainer.Options { NumberOfThreads = 1 });
 
             var firstModel = trainer.Fit(trainData);
 

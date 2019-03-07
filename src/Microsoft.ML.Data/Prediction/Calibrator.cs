@@ -10,16 +10,15 @@ using System.IO;
 using System.Linq;
 using Microsoft.Data.DataView;
 using Microsoft.ML;
-using Microsoft.ML.Calibrator;
+using Microsoft.ML.Calibrators;
 using Microsoft.ML.CommandLine;
 using Microsoft.ML.Data;
 using Microsoft.ML.EntryPoints;
-using Microsoft.ML.Internal.Calibration;
-using Microsoft.ML.Internal.Internallearn;
 using Microsoft.ML.Internal.Utilities;
 using Microsoft.ML.Model;
 using Microsoft.ML.Model.OnnxConverter;
 using Microsoft.ML.Model.Pfa;
+using Microsoft.ML.Transforms;
 using Newtonsoft.Json.Linq;
 
 [assembly: LoadableClass(PlattCalibratorTrainer.Summary, typeof(PlattCalibratorTrainer), null, typeof(SignatureCalibrator),
@@ -49,9 +48,9 @@ using Newtonsoft.Json.Linq;
     PlattCalibrator.LoaderSignature)]
 
 // This is for deserialization from a binary model file.
-[assembly: LoadableClass(typeof(PavCalibrator), null, typeof(SignatureLoadModel),
+[assembly: LoadableClass(typeof(IsotonicCalibrator), null, typeof(SignatureLoadModel),
     "PAV Calibration Executor",
-    PavCalibrator.LoaderSignature)]
+    IsotonicCalibrator.LoaderSignature)]
 
 // This is for deserialization from a binary model file.
 [assembly: LoadableClass(typeof(NaiveCalibrator), null, typeof(SignatureLoadModel),
@@ -80,7 +79,7 @@ using Newtonsoft.Json.Linq;
 [assembly: EntryPointModule(typeof(PavCalibratorTrainerFactory))]
 [assembly: EntryPointModule(typeof(PlattCalibratorTrainerFactory))]
 
-namespace Microsoft.ML.Internal.Calibration
+namespace Microsoft.ML.Calibrators
 {
     /// <summary>
     /// Signature for the loaders of calibrators.
@@ -173,7 +172,7 @@ namespace Microsoft.ML.Internal.Calibration
         where TSubModel : class
         where TCalibrator : class, ICalibrator
     {
-        protected readonly IHost Host;
+        private protected readonly IHost Host;
 
         // Strongly-typed members.
         /// <summary>
@@ -1547,8 +1546,10 @@ namespace Microsoft.ML.Internal.Calibration
         ICalibrator ICalibratorTrainer.FinishTraining(IChannel ch) => new PlattCalibrator(_host, _slope, _offset);
     }
 
-    ///<summary> The Platt calibrator calculates the probability following:
-    /// P(x) = 1 / (1 + exp(-<see cref="PlattCalibrator.Slope"/> * x + <see cref="PlattCalibrator.Offset"/>) </summary>.
+    ///<summary>
+    /// The Platt calibrator calculates the probability following:
+    /// P(x) = 1 / (1 + exp(-<see cref="PlattCalibrator.Slope"/> * x + <see cref="PlattCalibrator.Offset"/>)
+    /// </summary>.
     public sealed class PlattCalibrator : ICalibrator, IParameterMixer, ICanSaveModel, ISingleCanSavePfa, ISingleCanSaveOnnx
     {
         internal const string LoaderSignature = "PlattCaliExec";
@@ -1780,12 +1781,12 @@ namespace Microsoft.ML.Internal.Calibration
                 values[i] = top.Value;
             }
 
-            return new PavCalibrator(Host, mins.ToImmutableArray(), maxes.ToImmutableArray(), values.ToImmutableArray());
+            return new IsotonicCalibrator(Host, mins.ToImmutableArray(), maxes.ToImmutableArray(), values.ToImmutableArray());
         }
     }
 
     /// <summary>
-    /// The pair-adjacent violators calibrator.
+    /// The isotonic calibrator.
     /// </summary>
     /// <remarks>
     /// The function that is implemented by this calibrator is:
@@ -1797,7 +1798,7 @@ namespace Microsoft.ML.Internal.Calibration
     /// <item><description><see cref="Values"/>[n], if x &gt; <see cref="Maxes"/>[n]</description></item>
     ///</list>
     /// </remarks>
-    public sealed class PavCalibrator : ICalibrator, ICanSaveInBinaryFormat
+    public sealed class IsotonicCalibrator : ICalibrator, ICanSaveInBinaryFormat
     {
         internal const string LoaderSignature = "PAVCaliExec";
         internal const string RegistrationName = "PAVCalibrator";
@@ -1810,7 +1811,7 @@ namespace Microsoft.ML.Internal.Calibration
                 verReadableCur: 0x00010001,
                 verWeCanReadBack: 0x00010001,
                 loaderSignature: LoaderSignature,
-                loaderAssemblyName: typeof(PavCalibrator).Assembly.FullName);
+                loaderAssemblyName: typeof(IsotonicCalibrator).Assembly.FullName);
         }
 
         // Epsilon for 0-comparisons
@@ -1833,13 +1834,13 @@ namespace Microsoft.ML.Internal.Calibration
         public readonly ImmutableArray<float> Values;
 
         /// <summary>
-        /// Initializes a new instance of <see cref="PavCalibrator"/>.
+        /// Initializes a new instance of <see cref="IsotonicCalibrator"/>.
         /// </summary>
         /// <param name="env">The <see cref="IHostEnvironment"/> to use.</param>
         /// <param name="mins">The minimum values for each piece.</param>
         /// <param name="maxes">The maximum values for each piece.</param>
         /// <param name="values">The actual values for each piece.</param>
-        internal PavCalibrator(IHostEnvironment env, ImmutableArray<float> mins, ImmutableArray<float> maxes, ImmutableArray<float> values)
+        internal IsotonicCalibrator(IHostEnvironment env, ImmutableArray<float> mins, ImmutableArray<float> maxes, ImmutableArray<float> values)
         {
             Contracts.AssertValue(env);
             _host = env.Register(RegistrationName);
@@ -1857,7 +1858,7 @@ namespace Microsoft.ML.Internal.Calibration
             Values = values;
         }
 
-        private PavCalibrator(IHostEnvironment env, ModelLoadContext ctx)
+        private IsotonicCalibrator(IHostEnvironment env, ModelLoadContext ctx)
         {
             Contracts.AssertValue(env);
             _host = env.Register(RegistrationName);
@@ -1901,12 +1902,12 @@ namespace Microsoft.ML.Internal.Calibration
             _host.CheckDecode(valuePrev <= 1);
         }
 
-        private static PavCalibrator Create(IHostEnvironment env, ModelLoadContext ctx)
+        private static IsotonicCalibrator Create(IHostEnvironment env, ModelLoadContext ctx)
         {
             Contracts.CheckValue(env, nameof(env));
             env.CheckValue(ctx, nameof(ctx));
             ctx.CheckAtModel(GetVersionInfo());
-            return new PavCalibrator(env, ctx);
+            return new IsotonicCalibrator(env, ctx);
         }
 
         void ICanSaveInBinaryFormat.SaveAsBinary(BinaryWriter writer)

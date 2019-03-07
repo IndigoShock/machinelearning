@@ -23,17 +23,17 @@ namespace Microsoft.ML.Tests.Scenarios.Api
         [Fact]
         void Visibility()
         {
-            var ml = new MLContext(seed: 1, conc: 1);
+            var ml = new MLContext(seed: 1);
             var pipeline = ml.Data.CreateTextLoader(TestDatasets.Sentiment.GetLoaderColumns(), hasHeader: true)
-                .Append(ml.Transforms.Text.FeaturizeText("Features", new List<string> { "SentimentText" }, 
-                                                        new Transforms.Text.TextFeaturizingEstimator.Options { OutputTokens = true }));
+                .Append(ml.Transforms.Text.FeaturizeText(
+                    "Features", new Transforms.Text.TextFeaturizingEstimator.Options { OutputTokens = true }, "SentimentText"));
 
             var src = new MultiFileSource(GetDataPath(TestDatasets.Sentiment.trainFilename));
-            var data = pipeline.Fit(src).Read(src);
+            var data = pipeline.Fit(src).Load(src);
 
-            var textColumn = data.GetColumn<string>(ml, "SentimentText").Take(20);
-            var transformedTextColumn = data.GetColumn<string[]>(ml, "Features_TransformedText").Take(20);
-            var features = data.GetColumn<float[]>(ml, "Features").Take(20);
+            var textColumn = data.GetColumn<string>(data.Schema["SentimentText"]).Take(20);
+            var transformedTextColumn = data.GetColumn<string[]>(data.Schema["Features_TransformedText"]).Take(20);
+            var features = data.GetColumn<float[]>(data.Schema["Features"]).Take(20);
         }
     }
 }

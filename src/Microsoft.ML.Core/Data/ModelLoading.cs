@@ -8,7 +8,7 @@ using System.Reflection;
 using System.Text;
 using Microsoft.ML.Internal.Utilities;
 
-namespace Microsoft.ML.Model
+namespace Microsoft.ML
 {
     /// <summary>
     /// Signature for a repository based model loader. This is the dual of <see cref="ICanSaveModel"/>.
@@ -20,6 +20,23 @@ namespace Microsoft.ML.Model
     {
         public const string ModelStreamName = "Model.key";
         internal const string NameBinary = "Model.bin";
+
+        /// <summary>
+        /// Returns the new assembly name to maintain backward compatibility.
+        /// </summary>
+        private string ForwardedLoaderAssemblyName
+        {
+            get
+            {
+                switch (LoaderAssemblyName)
+                {
+                    case "Microsoft.ML.HalLearners":
+                        return "Microsoft.ML.Mkl.Components";
+                    default:
+                        return LoaderAssemblyName;
+                }
+            }
+        }
 
         /// <summary>
         /// Return whether this context contains a directory and stream for a sub-model with
@@ -259,7 +276,7 @@ namespace Microsoft.ML.Model
         {
             if (!string.IsNullOrEmpty(LoaderAssemblyName))
             {
-                var assembly = Assembly.Load(LoaderAssemblyName);
+                var assembly = Assembly.Load(ForwardedLoaderAssemblyName);
                 catalog.RegisterAssembly(assembly);
             }
         }

@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using System.Collections.Generic;
 using Microsoft.Data.DataView;
 using Microsoft.ML.Data;
 using Microsoft.ML.Internal.Utilities;
@@ -11,17 +12,76 @@ namespace Microsoft.ML
 {
     /// <summary>
     /// A catalog of operations over data that are not transformers or estimators.
-    /// This includes data readers, saving, caching, filtering etc.
+    /// This includes data loaders, saving, caching, filtering etc.
     /// </summary>
-    public sealed class DataOperationsCatalog
+    public sealed class DataOperationsCatalog : IInternalCatalog
     {
-        [BestFriend]
-        internal IHostEnvironment Environment { get; }
+        IHostEnvironment IInternalCatalog.Environment => _env;
+        private readonly IHostEnvironment _env;
 
         internal DataOperationsCatalog(IHostEnvironment env)
         {
             Contracts.AssertValue(env);
-            Environment = env;
+            _env = env;
+        }
+
+        /// <summary>
+        /// Create a new <see cref="IDataView"/> over an enumerable of the items of user-defined type.
+        /// The user maintains ownership of the <paramref name="data"/> and the resulting data view will
+        /// never alter the contents of the <paramref name="data"/>.
+        /// Since <see cref="IDataView"/> is assumed to be immutable, the user is expected to support
+        /// multiple enumeration of the <paramref name="data"/> that would return the same results, unless
+        /// the user knows that the data will only be cursored once.
+        ///
+        /// One typical usage for streaming data view could be: create the data view that lazily loads data
+        /// as needed, then apply pre-trained transformations to it and cursor through it for transformation
+        /// results.
+        /// </summary>
+        /// <typeparam name="TRow">The user-defined item type.</typeparam>
+        /// <param name="data">The data to wrap around.</param>
+        /// <param name="schemaDefinition">The optional schema definition of the data view to create. If <c>null</c>,
+        /// the schema definition is inferred from <typeparamref name="TRow"/>.</param>
+        /// <returns>The constructed <see cref="IDataView"/>.</returns>
+        /// <example>
+        /// <format type="text/markdown">
+        /// <![CDATA[
+        /// [!code-csharp[BootstrapSample](~/../docs/samples/docs/samples/Microsoft.ML.Samples/Dynamic/DataOperations/DataViewEnumerable.cs)]
+        /// ]]>
+        /// </format>
+        /// </example>
+        public IDataView LoadFromEnumerable<TRow>(IEnumerable<TRow> data, SchemaDefinition schemaDefinition = null)
+            where TRow : class
+        {
+            _env.CheckValue(data, nameof(data));
+            _env.CheckValueOrNull(schemaDefinition);
+            return DataViewConstructionUtils.CreateFromEnumerable(_env, data, schemaDefinition);
+        }
+
+        /// <summary>
+        /// Convert an <see cref="IDataView"/> into a strongly-typed <see cref="IEnumerable{TRow}"/>.
+        /// </summary>
+        /// <typeparam name="TRow">The user-defined row type.</typeparam>
+        /// <param name="data">The underlying data view.</param>
+        /// <param name="reuseRowObject">Whether to return the same object on every row, or allocate a new one per row.</param>
+        /// <param name="ignoreMissingColumns">Whether to ignore the case when a requested column is not present in the data view.</param>
+        /// <param name="schemaDefinition">Optional user-provided schema definition. If it is not present, the schema is inferred from the definition of T.</param>
+        /// <returns>The <see cref="IEnumerable{TRow}"/> that holds the data in <paramref name="data"/>. It can be enumerated multiple times.</returns>
+        /// <example>
+        /// <format type="text/markdown">
+        /// <![CDATA[
+        /// [!code-csharp[BootstrapSample](~/../docs/samples/docs/samples/Microsoft.ML.Samples/Dynamic/DataOperations/DataViewEnumerable.cs)]
+        /// ]]>
+        /// </format>
+        /// </example>
+        public IEnumerable<TRow> CreateEnumerable<TRow>(IDataView data, bool reuseRowObject,
+            bool ignoreMissingColumns = false, SchemaDefinition schemaDefinition = null)
+            where TRow : class, new()
+        {
+            _env.CheckValue(data, nameof(data));
+            _env.CheckValueOrNull(schemaDefinition);
+
+            var engine = new PipeEngine<TRow>(_env, data, ignoreMissingColumns, schemaDefinition);
+            return engine.RunPipe(reuseRowObject);
         }
 
         /// <summary>
@@ -49,9 +109,9 @@ namespace Microsoft.ML
             int? seed = null,
             bool complement = BootstrapSamplingTransformer.Defaults.Complement)
         {
-            Environment.CheckValue(input, nameof(input));
+            _env.CheckValue(input, nameof(input));
             return new BootstrapSamplingTransformer(
-                Environment,
+                _env,
                 input,
                 complement: complement,
                 seed: (uint?) seed,
@@ -79,16 +139,16 @@ namespace Microsoft.ML
         /// </example>
         public IDataView Cache(IDataView input, params string[] columnsToPrefetch)
         {
-            Environment.CheckValue(input, nameof(input));
-            Environment.CheckValueOrNull(columnsToPrefetch);
+            _env.CheckValue(input, nameof(input));
+            _env.CheckValueOrNull(columnsToPrefetch);
 
             int[] prefetch = new int[Utils.Size(columnsToPrefetch)];
             for (int i = 0; i < prefetch.Length; i++)
             {
                 if (!input.Schema.TryGetColumnIndex(columnsToPrefetch[i], out prefetch[i]))
-                    throw Environment.ExceptSchemaMismatch(nameof(columnsToPrefetch), "prefetch", columnsToPrefetch[i]);
+                    throw _env.ExceptSchemaMismatch(nameof(columnsToPrefetch), "prefetch", columnsToPrefetch[i]);
             }
-            return new CacheDataView(Environment, input, prefetch);
+            return new CacheDataView(_env, input, prefetch);
         }
 
         /// <summary>
@@ -111,14 +171,14 @@ namespace Microsoft.ML
         /// </example>
         public IDataView FilterRowsByColumn(IDataView input, string columnName, double lowerBound = double.NegativeInfinity, double upperBound = double.PositiveInfinity)
         {
-            Environment.CheckValue(input, nameof(input));
-            Environment.CheckNonEmpty(columnName, nameof(columnName));
-            Environment.CheckParam(lowerBound < upperBound, nameof(upperBound), "Must be less than lowerBound");
+            _env.CheckValue(input, nameof(input));
+            _env.CheckNonEmpty(columnName, nameof(columnName));
+            _env.CheckParam(lowerBound < upperBound, nameof(upperBound), "Must be less than lowerBound");
 
             var type = input.Schema[columnName].Type;
             if (!(type is NumberDataViewType))
-                throw Environment.ExceptSchemaMismatch(nameof(columnName), "filter", columnName, "number", type.ToString());
-            return new RangeFilter(Environment, input, columnName, lowerBound, upperBound, false);
+                throw _env.ExceptSchemaMismatch(nameof(columnName), "filter", columnName, "number", type.ToString());
+            return new RangeFilter(_env, input, columnName, lowerBound, upperBound, false);
         }
 
         /// <summary>
@@ -143,16 +203,16 @@ namespace Microsoft.ML
         /// </example>
         public IDataView FilterRowsByKeyColumnFraction(IDataView input, string columnName, double lowerBound = 0, double upperBound = 1)
         {
-            Environment.CheckValue(input, nameof(input));
-            Environment.CheckNonEmpty(columnName, nameof(columnName));
-            Environment.CheckParam(0 <= lowerBound && lowerBound <= 1, nameof(lowerBound), "Must be in [0, 1]");
-            Environment.CheckParam(0 <= upperBound && upperBound <= 2, nameof(upperBound), "Must be in [0, 2]");
-            Environment.CheckParam(lowerBound <= upperBound, nameof(upperBound), "Must be no less than lowerBound");
+            _env.CheckValue(input, nameof(input));
+            _env.CheckNonEmpty(columnName, nameof(columnName));
+            _env.CheckParam(0 <= lowerBound && lowerBound <= 1, nameof(lowerBound), "Must be in [0, 1]");
+            _env.CheckParam(0 <= upperBound && upperBound <= 2, nameof(upperBound), "Must be in [0, 2]");
+            _env.CheckParam(lowerBound <= upperBound, nameof(upperBound), "Must be no less than lowerBound");
 
             var type = input.Schema[columnName].Type;
             if (type.GetKeyCount() == 0)
-                throw Environment.ExceptSchemaMismatch(nameof(columnName), "filter", columnName, "KeyType", type.ToString());
-            return new RangeFilter(Environment, input, columnName, lowerBound, upperBound, false);
+                throw _env.ExceptSchemaMismatch(nameof(columnName), "filter", columnName, "KeyType", type.ToString());
+            return new RangeFilter(_env, input, columnName, lowerBound, upperBound, false);
         }
 
         /// <summary>
@@ -170,10 +230,10 @@ namespace Microsoft.ML
         /// </example>
         public IDataView FilterRowsByMissingValues(IDataView input, params string[] columns)
         {
-            Environment.CheckValue(input, nameof(input));
-            Environment.CheckUserArg(Utils.Size(columns) > 0, nameof(columns));
+            _env.CheckValue(input, nameof(input));
+            _env.CheckUserArg(Utils.Size(columns) > 0, nameof(columns));
 
-            return new NAFilter(Environment, input, complement: false, columns);
+            return new NAFilter(_env, input, complement: false, columns);
         }
 
         /// <summary>
@@ -208,8 +268,8 @@ namespace Microsoft.ML
             int shufflePoolSize = RowShufflingTransformer.Defaults.PoolRows,
             bool shuffleSource = !RowShufflingTransformer.Defaults.PoolOnly)
         {
-            Environment.CheckValue(input, nameof(input));
-            Environment.CheckUserArg(shufflePoolSize > 0, nameof(shufflePoolSize), "Must be positive");
+            _env.CheckValue(input, nameof(input));
+            _env.CheckUserArg(shufflePoolSize > 0, nameof(shufflePoolSize), "Must be positive");
 
             var options = new RowShufflingTransformer.Options
             {
@@ -219,7 +279,7 @@ namespace Microsoft.ML
                 ForceShuffleSeed = seed
             };
 
-            return new RowShufflingTransformer(Environment, options, input);
+            return new RowShufflingTransformer(_env, options, input);
         }
 
         /// <summary>
@@ -239,15 +299,15 @@ namespace Microsoft.ML
         /// </example>
         public IDataView SkipRows(IDataView input, long count)
         {
-            Environment.CheckValue(input, nameof(input));
-            Environment.CheckUserArg(count > 0, nameof(count), "Must be greater than zero.");
+            _env.CheckValue(input, nameof(input));
+            _env.CheckUserArg(count > 0, nameof(count), "Must be greater than zero.");
 
             var options = new SkipTakeFilter.SkipOptions()
             {
                 Count = count
             };
 
-            return new SkipTakeFilter(Environment, options, input);
+            return new SkipTakeFilter(_env, options, input);
         }
 
         /// <summary>
@@ -267,15 +327,15 @@ namespace Microsoft.ML
         /// </example>
         public IDataView TakeRows(IDataView input, long count)
         {
-            Environment.CheckValue(input, nameof(input));
-            Environment.CheckUserArg(count > 0, nameof(count), "Must be greater than zero.");
+            _env.CheckValue(input, nameof(input));
+            _env.CheckUserArg(count > 0, nameof(count), "Must be greater than zero.");
 
             var options = new SkipTakeFilter.TakeOptions()
             {
                 Count = count
             };
 
-            return new SkipTakeFilter(Environment, options, input);
+            return new SkipTakeFilter(_env, options, input);
         }
     }
 }

@@ -172,7 +172,7 @@ namespace Microsoft.ML.Transforms.Text
 
         private const int VersionTransformer = 0x00010003;
 
-        private readonly ImmutableArray<NgramHashingEstimator.ColumnInfo> _columns;
+        private readonly ImmutableArray<NgramHashingEstimator.ColumnOptions> _columns;
         private readonly VBuffer<ReadOnlyMemory<char>>[] _slotNames;
         private readonly VectorType[] _slotNamesTypes;
 
@@ -181,7 +181,7 @@ namespace Microsoft.ML.Transforms.Text
         /// </summary>
         /// <param name="env">Host Environment.</param>
         /// <param name="columns">Description of dataset columns and how to process them.</param>
-        internal NgramHashingTransformer(IHostEnvironment env, params NgramHashingEstimator.ColumnInfo[] columns) :
+        internal NgramHashingTransformer(IHostEnvironment env, params NgramHashingEstimator.ColumnOptions[] columns) :
             base(Contracts.CheckRef(env, nameof(env)).Register(nameof(NgramHashingTransformer)))
         {
             _columns = columns.ToImmutableArray();
@@ -192,7 +192,7 @@ namespace Microsoft.ML.Transforms.Text
             }
         }
 
-        internal NgramHashingTransformer(IHostEnvironment env, IDataView input, params NgramHashingEstimator.ColumnInfo[] columns) :
+        internal NgramHashingTransformer(IHostEnvironment env, IDataView input, params NgramHashingEstimator.ColumnOptions[] columns) :
             base(Contracts.CheckRef(env, nameof(env)).Register(nameof(NgramHashingTransformer)))
         {
             Contracts.CheckValue(columns, nameof(columns));
@@ -213,13 +213,13 @@ namespace Microsoft.ML.Transforms.Text
                 {
                     columnWithInvertHash.Add(i);
                     invertHashMaxCounts[i] = invertHashMaxCount;
-                    for (int j = 0; j < _columns[i].InputColumnNames.Length; j++)
+                    for (int j = 0; j < _columns[i].InputColumnNamesArray.Length; j++)
                     {
-                        if (!input.Schema.TryGetColumnIndex(_columns[i].InputColumnNames[j], out int srcCol))
-                            throw Host.ExceptSchemaMismatch(nameof(input), "input", _columns[i].InputColumnNames[j]);
+                        if (!input.Schema.TryGetColumnIndex(_columns[i].InputColumnNamesArray[j], out int srcCol))
+                            throw Host.ExceptSchemaMismatch(nameof(input), "input", _columns[i].InputColumnNamesArray[j]);
                         var columnType = input.Schema[srcCol].Type;
                         if (!NgramHashingEstimator.IsColumnTypeValid(input.Schema[srcCol].Type))
-                            throw Host.ExceptSchemaMismatch(nameof(input), "input", _columns[i].InputColumnNames[j], NgramHashingEstimator.ExpectedColumnType, columnType.ToString());
+                            throw Host.ExceptSchemaMismatch(nameof(input), "input", _columns[i].InputColumnNamesArray[j], NgramHashingEstimator.ExpectedColumnType, columnType.ToString());
                         sourceColumnsForInvertHash.Add(input.Schema[srcCol]);
                     }
                 }
@@ -289,14 +289,14 @@ namespace Microsoft.ML.Transforms.Text
             }
             var columnsLength = ctx.Reader.ReadInt32();
             Contracts.CheckDecode(columnsLength > 0);
-            var columns = new NgramHashingEstimator.ColumnInfo[columnsLength];
+            var columns = new NgramHashingEstimator.ColumnOptions[columnsLength];
             if (!loadLegacy)
             {
                 // *** Binary format ***
                 // int number of columns
                 // columns
                 for (int i = 0; i < columnsLength; i++)
-                    columns[i] = new NgramHashingEstimator.ColumnInfo(ctx);
+                    columns[i] = new NgramHashingEstimator.ColumnOptions(ctx);
             }
             else
             {
@@ -326,7 +326,7 @@ namespace Microsoft.ML.Transforms.Text
                 // int number of columns
                 // columns
                 for (int i = 0; i < columnsLength; i++)
-                    columns[i] = new NgramHashingEstimator.ColumnInfo(ctx, outputs[i], inputs[i]);
+                    columns[i] = new NgramHashingEstimator.ColumnOptions(ctx, outputs[i], inputs[i]);
             }
             _columns = columns.ToImmutableArray();
             TextModelHelper.LoadAll(Host, ctx, columnsLength, out _slotNames, out _slotNamesTypes);
@@ -340,14 +340,14 @@ namespace Microsoft.ML.Transforms.Text
             env.CheckValue(input, nameof(input));
 
             env.CheckValue(options.Column, nameof(options.Column));
-            var cols = new NgramHashingEstimator.ColumnInfo[options.Column.Length];
+            var cols = new NgramHashingEstimator.ColumnOptions[options.Column.Length];
             using (var ch = env.Start("ValidateArgs"))
             {
 
                 for (int i = 0; i < cols.Length; i++)
                 {
                     var item = options.Column[i];
-                    cols[i] = new NgramHashingEstimator.ColumnInfo(
+                    cols[i] = new NgramHashingEstimator.ColumnOptions(
                         item.Name,
                         item.Source ?? new string[] { item.Name },
                         item.NgramLength ?? options.NgramLength,
@@ -393,11 +393,11 @@ namespace Microsoft.ML.Transforms.Text
                 _srcTypes = new DataViewType[_parent._columns.Length][];
                 for (int i = 0; i < _parent._columns.Length; i++)
                 {
-                    _srcIndices[i] = new int[_parent._columns[i].InputColumnNames.Length];
-                    _srcTypes[i] = new DataViewType[_parent._columns[i].InputColumnNames.Length];
-                    for (int j = 0; j < _parent._columns[i].InputColumnNames.Length; j++)
+                    _srcIndices[i] = new int[_parent._columns[i].InputColumnNamesArray.Length];
+                    _srcTypes[i] = new DataViewType[_parent._columns[i].InputColumnNamesArray.Length];
+                    for (int j = 0; j < _parent._columns[i].InputColumnNamesArray.Length; j++)
                     {
-                        var srcName = _parent._columns[i].InputColumnNames[j];
+                        var srcName = _parent._columns[i].InputColumnNamesArray[j];
                         if (!inputSchema.TryGetColumnIndex(srcName, out int srcCol))
                             throw Host.ExceptSchemaMismatch(nameof(inputSchema), "input", srcName);
                         var columnType = inputSchema[srcCol].Type;
@@ -671,10 +671,10 @@ namespace Microsoft.ML.Transforms.Text
                 _srcIndices = new int[_parent._columns.Length][];
                 for (int i = 0; i < _parent._columns.Length; i++)
                 {
-                    _srcIndices[i] = new int[_parent._columns[i].InputColumnNames.Length];
-                    for (int j = 0; j < _parent._columns[i].InputColumnNames.Length; j++)
+                    _srcIndices[i] = new int[_parent._columns[i].InputColumnNamesArray.Length];
+                    for (int j = 0; j < _parent._columns[i].InputColumnNamesArray.Length; j++)
                     {
-                        var srcName = _parent._columns[i].InputColumnNames[j];
+                        var srcName = _parent._columns[i].InputColumnNamesArray[j];
                         if (!inputSchema.TryGetColumnIndex(srcName, out int srcCol))
                             throw _parent.Host.ExceptSchemaMismatch(nameof(inputSchema), "input", srcName);
                         _srcIndices[i][j] = srcCol;
@@ -794,7 +794,7 @@ namespace Microsoft.ML.Transforms.Text
                     {
                         srcNames = new string[srcIndices.Length];
                         for (int i = 0; i < srcIndices.Length; ++i)
-                            srcNames[i] = _parent._columns[iinfo].InputColumnNames[i];
+                            srcNames[i] = _parent._columns[iinfo].InputColumnNamesArray[i];
                     }
                     Contracts.Assert(Utils.Size(srcNames) == srcIndices.Length);
                     string[] friendlyNames = _friendlyNames?[iinfo];
@@ -873,12 +873,13 @@ namespace Microsoft.ML.Transforms.Text
         /// <summary>
         /// Describes how the transformer handles one pair of mulitple inputs - singular output columns.
         /// </summary>
-        public sealed class ColumnInfo
+        public sealed class ColumnOptions
         {
             /// <summary>Name of the column resulting from the transformation of <see cref="InputColumnNames"/>.</summary>
             public readonly string Name;
             /// <summary>Names of the columns to transform.</summary>
-            public readonly string[] InputColumnNames;
+            public IReadOnlyList<string> InputColumnNames => InputColumnNamesArray;
+            internal readonly string[] InputColumnNamesArray;
             /// <summary>Maximum ngram length.</summary>
             public readonly int NgramLength;
             /// <summary>Maximum number of tokens to skip when constructing an ngram.</summary>
@@ -922,7 +923,7 @@ namespace Microsoft.ML.Transforms.Text
             /// <paramref name="invertHash"/> specifies the upper bound of the number of distinct input values mapping to a hash that should be retained.
             /// <value>0</value> does not retain any input values. <value>-1</value> retains all input values mapping to each hash.</param>
             /// <param name="rehashUnigrams">Whether to rehash unigrams.</param>
-            public ColumnInfo(string name,
+            public ColumnOptions(string name,
                 string[] inputColumnNames,
                 int ngramLength = NgramHashingEstimator.Defaults.NgramLength,
                 int skipLength = NgramHashingEstimator.Defaults.SkipLength,
@@ -951,7 +952,7 @@ namespace Microsoft.ML.Transforms.Text
                 }
                 FriendlyNames = null;
                 Name = name;
-                InputColumnNames = inputColumnNames;
+                InputColumnNamesArray = inputColumnNames;
                 NgramLength = ngramLength;
                 SkipLength = skipLength;
                 AllLengths = allLengths;
@@ -962,7 +963,7 @@ namespace Microsoft.ML.Transforms.Text
                 RehashUnigrams = rehashUnigrams;
             }
 
-            internal ColumnInfo(ModelLoadContext ctx)
+            internal ColumnOptions(ModelLoadContext ctx)
             {
                 Contracts.AssertValue(ctx);
 
@@ -978,9 +979,9 @@ namespace Microsoft.ML.Transforms.Text
                 // byte: Ordered
                 // byte: AllLengths
                 var inputsLength = ctx.Reader.ReadInt32();
-                InputColumnNames = new string[inputsLength];
-                for (int i = 0; i < InputColumnNames.Length; i++)
-                    InputColumnNames[i] = ctx.LoadNonEmptyString();
+                InputColumnNamesArray = new string[inputsLength];
+                for (int i = 0; i < InputColumnNamesArray.Length; i++)
+                    InputColumnNamesArray[i] = ctx.LoadNonEmptyString();
                 Name = ctx.LoadNonEmptyString();
                 NgramLength = ctx.Reader.ReadInt32();
                 Contracts.CheckDecode(0 < NgramLength && NgramLength <= NgramBufferBuilder.MaxSkipNgramLength);
@@ -995,13 +996,13 @@ namespace Microsoft.ML.Transforms.Text
                 AllLengths = ctx.Reader.ReadBoolByte();
             }
 
-            internal ColumnInfo(ModelLoadContext ctx, string name, string[] inputColumnNames)
+            internal ColumnOptions(ModelLoadContext ctx, string name, string[] inputColumnNames)
             {
                 Contracts.AssertValue(ctx);
                 Contracts.CheckValue(inputColumnNames, nameof(inputColumnNames));
                 Contracts.CheckParam(!inputColumnNames.Any(r => string.IsNullOrWhiteSpace(r)), nameof(inputColumnNames),
                    "Contained some null or empty items");
-                InputColumnNames = inputColumnNames;
+                InputColumnNamesArray = inputColumnNames;
                 Name = name;
                 // *** Binary format ***
                 // string Output;
@@ -1040,10 +1041,10 @@ namespace Microsoft.ML.Transforms.Text
                 // byte: Rehash
                 // byte: Ordered
                 // byte: AllLengths
-                Contracts.Assert(InputColumnNames.Length > 0);
-                ctx.Writer.Write(InputColumnNames.Length);
-                for (int i = 0; i < InputColumnNames.Length; i++)
-                    ctx.SaveNonEmptyString(InputColumnNames[i]);
+                Contracts.Assert(InputColumnNamesArray.Length > 0);
+                ctx.Writer.Write(InputColumnNamesArray.Length);
+                for (int i = 0; i < InputColumnNamesArray.Length; i++)
+                    ctx.SaveNonEmptyString(InputColumnNamesArray[i]);
                 ctx.SaveNonEmptyString(Name);
 
                 Contracts.Assert(0 < NgramLength && NgramLength <= NgramBufferBuilder.MaxSkipNgramLength);
@@ -1073,7 +1074,7 @@ namespace Microsoft.ML.Transforms.Text
         }
 
         private readonly IHost _host;
-        private readonly ColumnInfo[] _columns;
+        private readonly ColumnOptions[] _columns;
 
         /// <summary>
         /// Produces a bag of counts of hashed ngrams in <paramref name="inputColumnName"/>
@@ -1171,7 +1172,7 @@ namespace Microsoft.ML.Transforms.Text
             uint seed = 314489979,
             bool ordered = true,
             int invertHash = 0)
-             : this(env, columns.Select(x => new ColumnInfo(x.outputColumnName, x.inputColumnName, ngramLength, skipLength, allLengths, hashBits, seed, ordered, invertHash)).ToArray())
+             : this(env, columns.Select(x => new ColumnOptions(x.outputColumnName, x.inputColumnName, ngramLength, skipLength, allLengths, hashBits, seed, ordered, invertHash)).ToArray())
         {
 
         }
@@ -1185,7 +1186,7 @@ namespace Microsoft.ML.Transforms.Text
         /// </summary>
         /// <param name="env">The environment.</param>
         /// <param name="columns">Array of columns which specifies the behavior of the transformation.</param>
-        internal NgramHashingEstimator(IHostEnvironment env, params ColumnInfo[] columns)
+        internal NgramHashingEstimator(IHostEnvironment env, params ColumnOptions[] columns)
         {
             Contracts.CheckValue(env, nameof(env));
             _host = env.Register(nameof(NgramHashingEstimator));
@@ -1228,7 +1229,7 @@ namespace Microsoft.ML.Transforms.Text
             var result = inputSchema.ToDictionary(x => x.Name);
             foreach (var colInfo in _columns)
             {
-                foreach (var input in colInfo.InputColumnNames)
+                foreach (var input in colInfo.InputColumnNamesArray)
                 {
                     if (!inputSchema.TryFindColumn(input, out var col))
                         throw _host.ExceptSchemaMismatch(nameof(inputSchema), "input", input);

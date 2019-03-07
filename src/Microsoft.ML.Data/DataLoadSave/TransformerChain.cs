@@ -236,7 +236,7 @@ namespace Microsoft.ML.Data
     /// <summary>
     /// Saving/loading routines for transformer chains.
     /// </summary>
-    public static class TransformerChain
+    internal static class TransformerChain
     {
         public const string LoaderSignature = "TransformerChain";
 
@@ -263,7 +263,7 @@ namespace Microsoft.ML.Data
                     if (!ex.IsMarked())
                         throw;
                     var chain = ModelFileUtils.LoadPipeline(env, stream, new MultiFileSource(null), extractInnerPipe: false);
-                    TransformerChain<ITransformer> transformChain = (chain as CompositeDataLoader).GetTransformer();
+                    TransformerChain<ITransformer> transformChain = (chain as LegacyCompositeDataLoader).GetTransformer();
                     var predictor = ModelFileUtils.LoadPredictorOrNull(env, stream);
                     if (predictor == null)
                         return transformChain;

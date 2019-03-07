@@ -18,15 +18,15 @@ namespace Microsoft.ML.Tests.TrainerEstimators
         {
             // Create data set
             var data = SamplesUtils.DatasetUtils.GenerateBinaryLabelFloatFeatureVectorSamples(1000).ToList();
-            var dataView = ML.Data.ReadFromEnumerable(data);
+            var dataView = ML.Data.LoadFromEnumerable(data);
 
             // Define a tree model whose trees will be extracted to construct a tree featurizer.
             var trainer = ML.BinaryClassification.Trainers.FastTree(
                 new FastTreeBinaryClassificationTrainer.Options
                 {
-                    NumThreads = 1,
-                    NumTrees = 10,
-                    NumLeaves = 5,
+                    NumberOfThreads = 1,
+                    NumberOfTrees = 10,
+                    NumberOfLeaves = 5,
                 });
 
             // Train the defined tree model.

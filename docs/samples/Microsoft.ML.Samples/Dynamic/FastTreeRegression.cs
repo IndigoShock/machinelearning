@@ -6,6 +6,7 @@ namespace Microsoft.ML.Samples.Dynamic
 {
     public static class FastTreeRegression
     {
+        // This example requires installation of additional nuget package <a href="https://www.nuget.org/packages/Microsoft.ML.FastTree/">Microsoft.ML.FastTree</a>.
         public static void Example()
         {
             // Create a new ML context, for ML.NET operations. It can be used for exception tracking and logging, 
@@ -14,7 +15,7 @@ namespace Microsoft.ML.Samples.Dynamic
 
             // Get a small dataset as an IEnumerable and convert it to an IDataView.
             var data = SamplesUtils.DatasetUtils.GetInfertData();
-            var trainData = ml.Data.ReadFromEnumerable(data);
+            var trainData = ml.Data.LoadFromEnumerable(data);
 
             // Preview of the data.
             //
@@ -29,22 +30,12 @@ namespace Microsoft.ML.Samples.Dynamic
             // We will train a FastTreeRegression model with 1 tree on these two columns to predict Age.
             string outputColumnName = "Features";
             var pipeline = ml.Transforms.Concatenate(outputColumnName, new[] { "Parity", "Induced" })
-                .Append(ml.Regression.Trainers.FastTree(labelColumnName: "Age", featureColumnName: outputColumnName, numTrees: 1, numLeaves: 2, minDatapointsInLeaves: 1));
+                .Append(ml.Regression.Trainers.FastTree(labelColumnName: "Age", featureColumnName: outputColumnName, numberOfTrees: 1, numberOfLeaves: 2, minimumExampleCountPerLeaf: 1));
 
             var model = pipeline.Fit(trainData);
 
             // Get the trained model parameters.
             var modelParams = model.LastTransformer.Model;
-
-            // Let's see where an example with Parity = 1 and Induced = 1 would end up in the single trained tree.
-            var testRow = new VBuffer<float>(2, new[] { 1.0f, 1.0f });
-            // Use the path object to pass to GetLeaf, which will populate path with the IDs of th nodes from root to leaf.
-            List<int> path = default;
-            // Get the ID of the leaf this example ends up in tree 0.
-            var leafID = modelParams.GetLeaf(0, in testRow, ref path);
-            // Get the leaf value for this leaf ID in tree 0.
-            var leafValue = modelParams.GetLeafValue(0, leafID);
-            Console.WriteLine("The leaf value in tree 0 is: " + leafValue);
         }
     }
 }
